@@ -38,6 +38,18 @@ O endereço exibido pelo Vite usa somente arquivos estáticos e chama as APIs no
 - **Integração:** o frontend recebe a origem HTTPS do Worker em `VITE_API_BASE_URL`; nenhuma chave ou credencial do backend entra no bundle público.
 - **CORS:** o Worker aceita `https://andreabrao.github.io` por padrão. Para domínio próprio ou outra origem, configure `FRONTEND_ORIGIN` no Worker; várias origens podem ser separadas por vírgula.
 
+## Login com Supabase
+
+O PreçoCerto usa o **Supabase Auth** para os logins de cliente, varejista e administrador. As permissões da plataforma e os dados de preços continuam no banco do backend; o Supabase é a identidade segura de cada pessoa.
+
+1. Crie ou escolha um projeto em [Supabase](https://supabase.com/dashboard) e, em **Authentication > Providers > Email**, habilite email/senha.
+2. Em **Authentication > URL Configuration**, adicione `https://andreabrao.github.io/precocerto/` em *Site URL* e em *Redirect URLs*.
+3. Em **Settings > API**, copie a **Project URL** e a chave **anon/public**. Nunca copie nem use a chave `service_role` no frontend ou no repositório.
+4. No GitHub, em **Settings > Secrets and variables > Actions > Variables**, crie `PRECOCERTO_SUPABASE_URL` e `PRECOCERTO_SUPABASE_ANON_KEY` com esses dois valores. O workflow injeta-os no frontend estático.
+5. No ambiente do Worker, configure `SUPABASE_URL` e `SUPABASE_ANON_KEY`; opcionalmente defina `ADMIN_BOOTSTRAP_EMAIL` com o email que será o primeiro administrador. Depois publique uma nova versão do backend.
+
+Quando a confirmação de email estiver habilitada no Supabase, o usuário deve confirmar a conta antes do primeiro acesso. Para o piloto, também é possível desativar temporariamente **Confirm email** em *Authentication > Providers > Email*.
+
 ## Publicar no GitHub Pages
 
 1. Publique primeiro o backend e confirme uma URL HTTPS estável para o Worker.

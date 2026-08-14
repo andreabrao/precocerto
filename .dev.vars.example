@@ -1,6 +1,11 @@
 IMPORT_API_KEY=troque-por-uma-chave-forte-antes-de-importar-dados
 
 # Backend: mantenha estas chaves somente no ambiente do Worker.
+# Use a URL do projeto e a chave anon/publica. O servidor valida cada sessao
+# na API oficial do Supabase; nao use a chave service_role neste projeto.
+SUPABASE_URL=https://seu-projeto.supabase.co
+SUPABASE_ANON_KEY=sua-chave-anon-publica
+# Opcional, apenas para compatibilidade com configuracoes antigas.
 SUPABASE_JWT_SECRET=segredo-jwt-do-supabase
 ADMIN_BOOTSTRAP_EMAIL=seu-email-administrador@exemplo.com
 OPENAI_API_KEY=chave-da-api-openai-para-leitura-de-folhetos
