@@ -27,7 +27,15 @@ function normalizeCandidate(value: unknown): ExtractedFlyerOffer | undefined {
   const priceCents = typeof candidate.priceCents === "number" ? Math.round(candidate.priceCents) : 0;
   if (productName.length < 2 || productName.length > 160 || priceCents <= 0 || priceCents > 1_000_000) return undefined;
   const shortText = (field: string, fallback: string, maximum = 80) => typeof candidate[field] === "string" && candidate[field].trim() ? candidate[field].trim().slice(0, maximum) : fallback;
-  const date = (field: string) => typeof candidate[field] === "string" && /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{3})?Z)?$/.test(candidate[field] as string) ? candidate[field] as string : null;
+  const date = (field: string, endOfDay = false) => {
+    const value = candidate[field];
+    if (typeof value !== "string") return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      const timestamp = new Date(`${value}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}-03:00`);
+      return Number.isNaN(timestamp.getTime()) ? null : timestamp.toISOString();
+    }
+    return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/.test(value) ? value : null;
+  };
   const confidence = typeof candidate.confidence === "number" ? Math.min(100, Math.max(0, Math.round(candidate.confidence))) : 60;
   return {
     productName,
@@ -36,7 +44,7 @@ function normalizeCandidate(value: unknown): ExtractedFlyerOffer | undefined {
     measure: shortText("measure", "un"),
     priceCents,
     validFrom: date("validFrom"),
-    validUntil: date("validUntil"),
+    validUntil: date("validUntil", true),
     confidence,
   };
 }
@@ -92,7 +100,7 @@ export async function extractOffersFromFlyer(input: { image: ArrayBuffer; conten
       input: [{
         role: "user",
         content: [
-          { type: "input_text", text: `Extraia somente promoções legíveis do folheto do mercado ${input.storeName}, em ${input.neighborhood}, ${input.city}, Brasil. Converta preços para centavos inteiros. Não invente produtos, marcas, datas ou preços. Use null quando a validade não estiver legível. Retorne em português.` },
+          { type: "input_text", text: `Extraia somente promoções legíveis do folheto do mercado ${input.storeName}, em ${input.neighborhood}, ${input.city}, Brasil. Converta preços para centavos inteiros. Não invente produtos, marcas, datas ou preços. Use null quando a validade não estiver legível. Para datas sem horário, use YYYY-MM-DD; a validade final é o último dia anunciado. Retorne em português.` },
           { type: "input_image", image_url: toDataUrl(input.image, input.contentType), detail: "high" },
         ],
       }],

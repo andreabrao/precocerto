@@ -36,6 +36,7 @@ export type FlyerCandidate = {
 export type FlyerJob = {
   id: string;
   storeId: string;
+  submittedByUserId: string;
   storeName: string;
   storeCity: string;
   storeNeighborhood: string;
@@ -129,7 +130,7 @@ export async function createFlyerJob(db: D1Database, input: { id?: string; store
 
 export async function getFlyerJob(db: D1Database, jobId: string) {
   const job = await db.prepare(
-    "SELECT j.id, j.store_id AS storeId, s.name AS storeName, s.city AS storeCity, s.neighborhood AS storeNeighborhood, j.image_key AS imageKey, j.original_filename AS originalFilename, j.image_content_type AS imageContentType, j.status, j.ai_model AS aiModel, j.extracted_count AS extractedCount, j.error_message AS errorMessage, j.created_at AS createdAt, j.analyzed_at AS analyzedAt, j.published_at AS publishedAt FROM flyer_ingestion_jobs j INNER JOIN stores s ON s.id = j.store_id WHERE j.id = ?",
+    "SELECT j.id, j.store_id AS storeId, j.submitted_by_user_id AS submittedByUserId, s.name AS storeName, s.city AS storeCity, s.neighborhood AS storeNeighborhood, j.image_key AS imageKey, j.original_filename AS originalFilename, j.image_content_type AS imageContentType, j.status, j.ai_model AS aiModel, j.extracted_count AS extractedCount, j.error_message AS errorMessage, j.created_at AS createdAt, j.analyzed_at AS analyzedAt, j.published_at AS publishedAt FROM flyer_ingestion_jobs j INNER JOIN stores s ON s.id = j.store_id WHERE j.id = ?",
   ).bind(jobId).first<FlyerJob>();
   return job ?? null;
 }
@@ -137,7 +138,7 @@ export async function getFlyerJob(db: D1Database, jobId: string) {
 export async function listFlyerJobs(db: D1Database, storeId?: string) {
   const condition = storeId ? "WHERE j.store_id = ?" : "";
   const result = await db.prepare(
-    `SELECT j.id, j.store_id AS storeId, s.name AS storeName, s.city AS storeCity, s.neighborhood AS storeNeighborhood, j.image_key AS imageKey, j.original_filename AS originalFilename, j.image_content_type AS imageContentType, j.status, j.ai_model AS aiModel, j.extracted_count AS extractedCount, j.error_message AS errorMessage, j.created_at AS createdAt, j.analyzed_at AS analyzedAt, j.published_at AS publishedAt FROM flyer_ingestion_jobs j INNER JOIN stores s ON s.id = j.store_id ${condition} ORDER BY j.created_at DESC LIMIT 30`,
+    `SELECT j.id, j.store_id AS storeId, j.submitted_by_user_id AS submittedByUserId, s.name AS storeName, s.city AS storeCity, s.neighborhood AS storeNeighborhood, j.image_key AS imageKey, j.original_filename AS originalFilename, j.image_content_type AS imageContentType, j.status, j.ai_model AS aiModel, j.extracted_count AS extractedCount, j.error_message AS errorMessage, j.created_at AS createdAt, j.analyzed_at AS analyzedAt, j.published_at AS publishedAt FROM flyer_ingestion_jobs j INNER JOIN stores s ON s.id = j.store_id ${condition} ORDER BY j.created_at DESC LIMIT 30`,
   ).bind(...(storeId ? [storeId] : [])).all<FlyerJob>();
   return result.results ?? [];
 }
@@ -177,16 +178,63 @@ export async function getPlatformOverview(db: D1Database) {
   return { activeUsers: count(users), retailers: count(retailers), stores: count(stores), openFlyerJobs: count(jobs), offersAwaitingReview: count(pending) };
 }
 
+type RetailerSubscription = {
+  id: string;
+  status: string;
+  provider: string;
+  currentPeriodEnd: string | null;
+  planId: string;
+  planName: string;
+  priceCents: number;
+  monthlyFlyerLimit: number;
+  monthlyAiExtractionLimit: number;
+  analyticsLevel: string;
+};
+
+function currentMonthRange() {
+  const date = new Date();
+  const start = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+  const end = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1));
+  return { start: start.toISOString(), end: end.toISOString() };
+}
+
+export async function getRetailerPlanUsage(db: D1Database, retailerUserId: string) {
+  const { start, end } = currentMonthRange();
+  const [subscription, flyerUsage, aiUsage] = await db.batch([
+    db.prepare("SELECT s.id, s.status, s.provider, s.current_period_end AS currentPeriodEnd, p.id AS planId, p.name AS planName, p.price_cents AS priceCents, p.monthly_flyer_limit AS monthlyFlyerLimit, p.monthly_ai_extraction_limit AS monthlyAiExtractionLimit, p.analytics_level AS analyticsLevel FROM retailer_subscriptions s INNER JOIN retail_plans p ON p.id = s.plan_id WHERE s.retailer_user_id = ? AND s.status = 'active' AND p.active = 1 ORDER BY s.updated_at DESC LIMIT 1").bind(retailerUserId),
+    db.prepare("SELECT COUNT(*) AS count FROM flyer_ingestion_jobs WHERE submitted_by_user_id = ? AND created_at >= ? AND created_at < ?").bind(retailerUserId, start, end),
+    db.prepare("SELECT COUNT(*) AS count FROM flyer_ingestion_jobs WHERE submitted_by_user_id = ? AND analyzed_at >= ? AND analyzed_at < ?").bind(retailerUserId, start, end),
+  ]);
+  const subscriptionPlan = subscription.results?.[0] as RetailerSubscription | undefined;
+  const flyersThisMonth = Number(flyerUsage.results?.[0]?.count ?? 0);
+  const aiReadsThisMonth = Number(aiUsage.results?.[0]?.count ?? 0);
+  return {
+    subscription: subscriptionPlan ?? null,
+    flyersThisMonth,
+    aiReadsThisMonth,
+    remainingFlyers: subscriptionPlan ? Math.max(0, subscriptionPlan.monthlyFlyerLimit - flyersThisMonth) : 0,
+    remainingAiReads: subscriptionPlan ? Math.max(0, subscriptionPlan.monthlyAiExtractionLimit - aiReadsThisMonth) : 0,
+  };
+}
+
+export async function requireRetailerPlanAllowance(db: D1Database, userId: string, action: "flyer" | "ai") {
+  const owner = await db.prepare("SELECT role FROM platform_users WHERE id = ? AND active = 1").bind(userId).first<{ role: PlatformRole }>();
+  if (!owner || owner.role !== "retailer") return;
+  const usage = await getRetailerPlanUsage(db, userId);
+  if (!usage.subscription) throw new Error("Ative um plano do varejista antes de enviar ou analisar folhetos.");
+  const limit = action === "flyer" ? usage.subscription.monthlyFlyerLimit : usage.subscription.monthlyAiExtractionLimit;
+  const used = action === "flyer" ? usage.flyersThisMonth : usage.aiReadsThisMonth;
+  if (used >= limit) {
+    const label = action === "flyer" ? "folhetos" : "leituras por IA";
+    throw new Error(`O limite mensal de ${label} do plano ${usage.subscription.planName} foi atingido.`);
+  }
+  return usage;
+}
+
 export async function getRetailerDashboard(db: D1Database, account: PlatformAccount) {
   if (!account.retailerStoreId) throw new Error("Associe esta conta a uma loja para abrir o painel do varejista.");
-  const currentMonth = new Date().toISOString().slice(0, 7);
-  const [subscription, flyerUsage] = await db.batch([
-    db.prepare("SELECT s.id, s.status, s.provider, s.current_period_end AS currentPeriodEnd, p.id AS planId, p.name AS planName, p.price_cents AS priceCents, p.monthly_flyer_limit AS monthlyFlyerLimit, p.monthly_ai_extraction_limit AS monthlyAiExtractionLimit, p.analytics_level AS analyticsLevel FROM retailer_subscriptions s INNER JOIN retail_plans p ON p.id = s.plan_id WHERE s.retailer_user_id = ? ORDER BY s.updated_at DESC LIMIT 1").bind(account.id),
-    db.prepare("SELECT COUNT(*) AS count FROM flyer_ingestion_jobs WHERE submitted_by_user_id = ? AND substr(created_at, 1, 7) = ?").bind(account.id, currentMonth),
-  ]);
-  const plan = subscription.results?.[0] ?? null;
-  const flyersThisMonth = Number(flyerUsage.results?.[0]?.count ?? 0);
-  return { storeId: account.retailerStoreId, storeName: account.retailerStoreName, subscription: plan, flyersThisMonth };
+  const usage = await getRetailerPlanUsage(db, account.id);
+  return { storeId: account.retailerStoreId, storeName: account.retailerStoreName, ...usage };
 }
 
 export async function createPendingSubscription(db: D1Database, retailerUserId: string, planId: string) {

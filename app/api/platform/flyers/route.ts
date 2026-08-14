@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { getRawDb } from "@/db";
 import { ensureCuritibaDatabase } from "@/db/bootstrap";
-import { createFlyerJob, listFlyerJobs, requirePlatformRole } from "@/db/platform";
+import { createFlyerJob, listFlyerJobs, requirePlatformRole, requireRetailerPlanAllowance } from "@/db/platform";
 import { requirePlatformIdentity } from "@/lib/platform-auth";
 
 export const dynamic = "force-dynamic";
@@ -37,6 +37,7 @@ export async function POST(request: Request) {
     const account = await requirePlatformRole(db, identity, ["admin", "retailer"]);
     const storeId = account.role === "retailer" ? account.retailerStoreId : requestedStoreId;
     if (!storeId) return Response.json({ error: "Associe a conta do varejista a uma loja antes de enviar um folheto." }, { status: 400 });
+    await requireRetailerPlanAllowance(db, account.id, "flyer");
     const store = await db.prepare("SELECT id FROM stores WHERE id = ? AND active = 1").bind(storeId).first<{ id: string }>();
     if (!store) return Response.json({ error: "Loja não encontrada." }, { status: 404 });
     const jobId = crypto.randomUUID();

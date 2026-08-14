@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   DEFAULT_RADIUS_KM,
   approximatePoint,
@@ -155,6 +155,7 @@ export default function Home() {
   const [storeOffers, setStoreOffers] = useState<StoreOffer[]>([]);
   const [storeOffersState, setStoreOffersState] = useState<StoreOffersStatus>("idle");
   const [offersStore, setOffersStore] = useState<StoreResult>();
+  const storeOffersRequestId = useRef(0);
   const [dataState, setDataState] = useState<"loading" | "live" | "fallback">("loading");
   const [radar, setRadar] = useState<RadarAlert[]>(fallbackRadar);
   const [radarCoverage, setRadarCoverage] = useState(86);
@@ -256,6 +257,7 @@ export default function Home() {
         if (!Array.isArray(payload.stores)) throw new Error("invalid comparison");
         setComparisonStores(payload.stores);
         setSelectedStore(0);
+        storeOffersRequestId.current += 1;
         setStoreOffers([]);
         setOffersStore(undefined);
         setStoreOffersState("idle");
@@ -264,6 +266,9 @@ export default function Home() {
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
         setComparisonStores(fallbackStores);
+        storeOffersRequestId.current += 1;
+        setOffersStore(undefined);
+        setStoreOffersState("idle");
         setDataState("fallback");
     });
     return () => controller.abort();
@@ -544,6 +549,7 @@ export default function Home() {
   };
 
   const showStoreOffers = async (store: StoreResult, index: number) => {
+    const requestId = ++storeOffersRequestId.current;
     setSelectedStore(index);
     setOffersStore(store);
     setStoreOffers([]);
@@ -552,14 +558,17 @@ export default function Home() {
       const response = await fetch(apiUrl(`/api/store-offers?store=${encodeURIComponent(store.id)}`));
       const payload = (await response.json()) as { offers?: StoreOffer[]; error?: string };
       if (!response.ok || !Array.isArray(payload.offers)) throw new Error(payload.error ?? "Não foi possível carregar as promoções.");
+      if (requestId !== storeOffersRequestId.current) return;
       setStoreOffers(payload.offers);
       setStoreOffersState("ready");
     } catch {
+      if (requestId !== storeOffersRequestId.current) return;
       setStoreOffersState("error");
     }
   };
 
   const closeStoreOffers = () => {
+    storeOffersRequestId.current += 1;
     setStoreOffersState("idle");
     setOffersStore(undefined);
   };

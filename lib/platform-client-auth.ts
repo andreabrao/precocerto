@@ -14,6 +14,13 @@ export type PlatformAccount = {
 type AuthSession = { access_token: string; refresh_token?: string };
 type SupabaseAuthResponse = Partial<AuthSession> & { error_description?: string; msg?: string };
 
+export class PlatformClientRequestError extends Error {
+  constructor(message: string, readonly status?: number) {
+    super(message);
+    this.name = "PlatformClientRequestError";
+  }
+}
+
 let supabaseUrl = (import.meta.env.VITE_SUPABASE_URL ?? "").trim().replace(/\/+$/, "");
 let supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY ?? "").trim();
 const sessionKey = "precocerto-platform-session";
@@ -74,7 +81,7 @@ async function supabaseRequest(path: string, init: RequestInit) {
     },
   });
   const payload = await response.json().catch(() => ({})) as SupabaseAuthResponse;
-  if (!response.ok) throw new Error(payload.error_description ?? payload.msg ?? "Não foi possível concluir o acesso.");
+  if (!response.ok) throw new PlatformClientRequestError(payload.error_description ?? payload.msg ?? "Não foi possível concluir o acesso.", response.status);
   return payload;
 }
 
@@ -100,10 +107,21 @@ export async function signUpWithPassword(email: string, password: string, displa
   return session;
 }
 
+export async function refreshPlatformSession(refreshToken: string) {
+  const response = await supabaseRequest("/auth/v1/token?grant_type=refresh_token", {
+    method: "POST",
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  });
+  if (!response.access_token) throw new Error("Não foi possível renovar sua sessão.");
+  const session = { access_token: response.access_token, refresh_token: response.refresh_token ?? refreshToken } satisfies AuthSession;
+  saveSession(session);
+  return session;
+}
+
 export async function fetchPlatformAccount(token: string) {
   const response = await fetch(apiUrl("/api/platform/me"), { headers: { authorization: `Bearer ${token}` } });
   const payload = await response.json().catch(() => ({})) as { account?: PlatformAccount; error?: string };
-  if (!response.ok || !payload.account) throw new Error(payload.error ?? "Não foi possível carregar a sua conta.");
+  if (!response.ok || !payload.account) throw new PlatformClientRequestError(payload.error ?? "Não foi possível carregar a sua conta.", response.status);
   return payload.account;
 }
 

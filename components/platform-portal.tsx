@@ -9,7 +9,9 @@ import {
   isAuthConfigured,
   loadSupabaseConfiguration,
   loadSession,
+  PlatformClientRequestError,
   rememberLandingSeen,
+  refreshPlatformSession,
   signInWithPassword,
   signUpWithPassword,
   type PlatformAccount,
@@ -20,7 +22,7 @@ type Plan = { id: string; name: string; description: string; priceCents: number;
 type Store = { id: string; name: string; city: string; neighborhood: string };
 type FlyerJob = { id: string; storeId: string; storeName: string; status: string; originalFilename: string; extractedCount: number; createdAt: string; errorMessage?: string | null };
 type AdminPayload = { overview: { activeUsers: number; retailers: number; stores: number; openFlyerJobs: number; offersAwaitingReview: number }; plans: Plan[]; stores: Store[]; jobs: FlyerJob[] };
-type RetailerPayload = { storeId: string; storeName: string; flyersThisMonth: number; subscription: { planName: string; status: string; monthlyFlyerLimit: number; monthlyAiExtractionLimit: number; analyticsLevel: string } | null; offers: { productName: string; priceCents: number; measure: string }[] };
+type RetailerPayload = { storeId: string; storeName: string; flyersThisMonth: number; aiReadsThisMonth: number; remainingFlyers: number; remainingAiReads: number; subscription: { planName: string; status: string; monthlyFlyerLimit: number; monthlyAiExtractionLimit: number; analyticsLevel: string } | null; offers: { productName: string; priceCents: number; measure: string }[] };
 
 const formatCurrency = (cents: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cents / 100);
 
@@ -94,7 +96,37 @@ export function PlatformPortal({ onOpenShopping, onClose }: { onOpenShopping: ()
   }, []);
 
   useEffect(() => {
-    if (token) void fetchPlatformAccount(token).then((profile) => { setAccount(profile); setView("account"); }).catch(clearSession);
+    if (!token) return;
+    let cancelled = false;
+    const restoreAccount = async () => {
+      try {
+        const profile = await fetchPlatformAccount(token);
+        if (!cancelled) { setAccount(profile); setView("account"); }
+      } catch (error) {
+        const savedSession = loadSession();
+        if (error instanceof PlatformClientRequestError && error.status === 401 && savedSession?.access_token === token && savedSession.refresh_token) {
+          try {
+            const refreshed = await refreshPlatformSession(savedSession.refresh_token);
+            if (!cancelled) setToken(refreshed.access_token);
+            return;
+          } catch {
+            // A sessão será limpa abaixo quando o refresh token também não for válido.
+          }
+        }
+        if (!cancelled && error instanceof PlatformClientRequestError && error.status === 401) {
+          clearSession();
+          setToken(undefined);
+          setAccount(undefined);
+          setView("access");
+          setMessage("Sua sessão expirou. Entre novamente para continuar.");
+        } else if (!cancelled) {
+          setView("access");
+          setMessage("Não foi possível validar sua conta agora. Verifique a conexão e tente novamente.");
+        }
+      }
+    };
+    void restoreAccount();
+    return () => { cancelled = true; };
   }, [token]);
 
   useEffect(() => {
@@ -128,6 +160,7 @@ export function PlatformPortal({ onOpenShopping, onClose }: { onOpenShopping: ()
   const submitFlyer = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!token || !flyerFile) { setMessage("Selecione o folheto da oferta."); return; }
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(flyerFile.type) || flyerFile.size > 8 * 1024 * 1024) { setMessage("Envie uma imagem JPG, PNG ou WebP de até 8 MB."); return; }
     setBusy(true); setMessage("");
     try {
       const form = new FormData(); form.append("flyer", flyerFile); if (account?.role === "admin") form.append("storeId", selectedStoreId);

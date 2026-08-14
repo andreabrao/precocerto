@@ -1,6 +1,6 @@
 import { getRawDb } from "@/db";
 import { ensureCuritibaDatabase } from "@/db/bootstrap";
-import { getFlyerJob, listFlyerCandidates, requirePlatformRole } from "@/db/platform";
+import { getFlyerJob, listFlyerCandidates, requirePlatformRole, type FlyerCandidate } from "@/db/platform";
 import { requirePlatformIdentity } from "@/lib/platform-auth";
 
 export const dynamic = "force-dynamic";
@@ -25,9 +25,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const job = await getFlyerJob(db, id);
     if (!job) return Response.json({ error: "Folheto não encontrado." }, { status: 404 });
     if (job.status !== "pending_review") return Response.json({ error: "Analise o folheto antes de publicar." }, { status: 409 });
-    const candidates = (await listFlyerCandidates(db, id)).filter((candidate) => candidate.status === "pending_review");
-    if (!candidates.length) return Response.json({ error: "Não há ofertas para publicar." }, { status: 409 });
     const timestamp = new Date().toISOString();
+    const candidates = (await listFlyerCandidates(db, id))
+      .filter((candidate: FlyerCandidate) => candidate.status === "pending_review")
+      .filter((candidate: FlyerCandidate) => !candidate.validUntil || candidate.validUntil > timestamp);
+    if (!candidates.length) return Response.json({ error: "Não há ofertas válidas para publicar. Revise a data de validade do folheto." }, { status: 409 });
     const fallbackExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
     const artifactId = `flyer-artifact-${job.id}`;
     const commands: D1PreparedStatement[] = [
