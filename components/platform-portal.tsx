@@ -111,6 +111,11 @@ export function PlatformPortal({ onOpenShopping, onClose }: { onOpenShopping: ()
     try {
       if (!isAuthConfigured() && !await loadSupabaseConfiguration()) throw new Error("Os logins ainda estão sendo configurados. Tente novamente em alguns minutos.");
       const session = isRegistering ? await signUpWithPassword(email, password, displayName) : await signInWithPassword(email, password);
+      if (!session) {
+        setIsRegistering(false);
+        setMessage("Conta criada. Confirme o e-mail enviado pelo Supabase e depois entre com sua senha.");
+        return;
+      }
       const profile = await fetchPlatformAccount(session.access_token);
       rememberLandingSeen();
       setToken(session.access_token); setAccount(profile); setView("account");

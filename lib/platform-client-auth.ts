@@ -12,6 +12,7 @@ export type PlatformAccount = {
 };
 
 type AuthSession = { access_token: string; refresh_token?: string };
+type SupabaseAuthResponse = Partial<AuthSession> & { error_description?: string; msg?: string };
 
 let supabaseUrl = (import.meta.env.VITE_SUPABASE_URL ?? "").trim().replace(/\/+$/, "");
 let supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY ?? "").trim();
@@ -72,25 +73,29 @@ async function supabaseRequest(path: string, init: RequestInit) {
       ...(init.headers ?? {}),
     },
   });
-  const payload = await response.json().catch(() => ({})) as { error_description?: string; msg?: string; access_token?: string; refresh_token?: string };
-  if (!response.ok || !payload.access_token) throw new Error(payload.error_description ?? payload.msg ?? "Não foi possível concluir o login.");
-  return { access_token: payload.access_token, refresh_token: payload.refresh_token } satisfies AuthSession;
+  const payload = await response.json().catch(() => ({})) as SupabaseAuthResponse;
+  if (!response.ok) throw new Error(payload.error_description ?? payload.msg ?? "Não foi possível concluir o acesso.");
+  return payload;
 }
 
 export async function signInWithPassword(email: string, password: string) {
-  const session = await supabaseRequest("/auth/v1/token?grant_type=password", {
+  const response = await supabaseRequest("/auth/v1/token?grant_type=password", {
     method: "POST",
     body: JSON.stringify({ email, password }),
   });
+  if (!response.access_token) throw new Error("Não foi possível concluir o login.");
+  const session = { access_token: response.access_token, refresh_token: response.refresh_token } satisfies AuthSession;
   saveSession(session);
   return session;
 }
 
 export async function signUpWithPassword(email: string, password: string, displayName: string) {
-  const session = await supabaseRequest("/auth/v1/signup", {
+  const response = await supabaseRequest("/auth/v1/signup", {
     method: "POST",
     body: JSON.stringify({ email, password, data: { full_name: displayName } }),
   });
+  if (!response.access_token) return undefined;
+  const session = { access_token: response.access_token, refresh_token: response.refresh_token } satisfies AuthSession;
   saveSession(session);
   return session;
 }
