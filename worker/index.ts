@@ -66,7 +66,7 @@ const worker = {
         return new Response(null, {
           status: 204,
           headers: {
-            "Access-Control-Allow-Headers": "Content-Type",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
             "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
             "Access-Control-Allow-Origin": origin,
             "Access-Control-Max-Age": "86400",

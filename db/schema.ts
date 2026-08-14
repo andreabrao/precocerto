@@ -134,3 +134,101 @@ export const communityNotifications = sqliteTable(
     index("idx_notifications_contributor_created").on(table.contributorId, table.createdAt),
   ],
 );
+
+export const platformUsers = sqliteTable(
+  "platform_users",
+  {
+    id: text("id").primaryKey(),
+    email: text("email").notNull(),
+    displayName: text("display_name"),
+    role: text("role").notNull().default("customer"),
+    retailerStoreId: text("retailer_store_id").references(() => stores.id),
+    active: integer("active", { mode: "boolean" }).notNull().default(true),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("idx_platform_users_email").on(table.email),
+    index("idx_platform_users_role_active").on(table.role, table.active),
+    index("idx_platform_users_retailer_store").on(table.retailerStoreId),
+  ],
+);
+
+export const retailPlans = sqliteTable("retail_plans", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description").notNull(),
+  priceCents: integer("price_cents").notNull(),
+  monthlyFlyerLimit: integer("monthly_flyer_limit").notNull(),
+  monthlyAiExtractionLimit: integer("monthly_ai_extraction_limit").notNull(),
+  storeLimit: integer("store_limit").notNull(),
+  analyticsLevel: text("analytics_level").notNull(),
+  active: integer("active", { mode: "boolean" }).notNull().default(true),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const retailerSubscriptions = sqliteTable(
+  "retailer_subscriptions",
+  {
+    id: text("id").primaryKey(),
+    retailerUserId: text("retailer_user_id").notNull().references(() => platformUsers.id),
+    planId: text("plan_id").notNull().references(() => retailPlans.id),
+    status: text("status").notNull().default("pending"),
+    provider: text("provider").notNull().default("mercado_pago"),
+    providerReference: text("provider_reference"),
+    currentPeriodEnd: text("current_period_end"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    index("idx_subscriptions_retailer_status").on(table.retailerUserId, table.status),
+    index("idx_subscriptions_plan_status").on(table.planId, table.status),
+  ],
+);
+
+export const flyerIngestionJobs = sqliteTable(
+  "flyer_ingestion_jobs",
+  {
+    id: text("id").primaryKey(),
+    storeId: text("store_id").notNull().references(() => stores.id),
+    submittedByUserId: text("submitted_by_user_id").notNull().references(() => platformUsers.id),
+    imageKey: text("image_key").notNull(),
+    imageContentType: text("image_content_type").notNull(),
+    originalFilename: text("original_filename").notNull(),
+    status: text("status").notNull().default("queued"),
+    aiModel: text("ai_model"),
+    extractedCount: integer("extracted_count").notNull().default(0),
+    errorMessage: text("error_message"),
+    createdAt: text("created_at").notNull(),
+    analyzedAt: text("analyzed_at"),
+    publishedAt: text("published_at"),
+  },
+  (table) => [
+    index("idx_flyer_jobs_store_status_created").on(table.storeId, table.status, table.createdAt),
+    index("idx_flyer_jobs_submitter_created").on(table.submittedByUserId, table.createdAt),
+  ],
+);
+
+export const flyerOfferCandidates = sqliteTable(
+  "flyer_offer_candidates",
+  {
+    id: text("id").primaryKey(),
+    jobId: text("job_id").notNull().references(() => flyerIngestionJobs.id),
+    productName: text("product_name").notNull(),
+    brand: text("brand").notNull(),
+    category: text("category").notNull(),
+    measure: text("measure").notNull(),
+    priceCents: integer("price_cents").notNull(),
+    validFrom: text("valid_from"),
+    validUntil: text("valid_until"),
+    confidence: integer("confidence").notNull(),
+    status: text("status").notNull().default("pending_review"),
+    createdAt: text("created_at").notNull(),
+    publishedObservationId: text("published_observation_id"),
+  },
+  (table) => [
+    index("idx_flyer_candidates_job_status").on(table.jobId, table.status),
+    index("idx_flyer_candidates_status_created").on(table.status, table.createdAt),
+  ],
+);

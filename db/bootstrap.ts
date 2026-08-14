@@ -15,11 +15,24 @@ const schemaStatements = [
   "CREATE TABLE IF NOT EXISTS community_contributions (id TEXT PRIMARY KEY, contributor_id TEXT NOT NULL, store_id TEXT NOT NULL, store_name TEXT NOT NULL, product_id TEXT NOT NULL, image_key TEXT NOT NULL, image_content_type TEXT NOT NULL, price_cents INTEGER NOT NULL, latitude INTEGER NOT NULL, longitude INTEGER NOT NULL, submitted_at TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', points_awarded INTEGER NOT NULL DEFAULT 0, FOREIGN KEY(contributor_id) REFERENCES contributors(id), FOREIGN KEY(store_id) REFERENCES stores(id), FOREIGN KEY(product_id) REFERENCES products(id))",
   "CREATE TABLE IF NOT EXISTS consumer_price_alerts (id TEXT PRIMARY KEY, contributor_id TEXT NOT NULL, product_id TEXT NOT NULL, target_cents INTEGER NOT NULL, active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, FOREIGN KEY(contributor_id) REFERENCES contributors(id), FOREIGN KEY(product_id) REFERENCES products(id), UNIQUE(contributor_id, product_id))",
   "CREATE TABLE IF NOT EXISTS community_notifications (id TEXT PRIMARY KEY, contributor_id TEXT NOT NULL, type TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, dedupe_key TEXT NOT NULL, created_at TEXT NOT NULL, read_at TEXT, FOREIGN KEY(contributor_id) REFERENCES contributors(id), UNIQUE(contributor_id, dedupe_key))",
+  "CREATE TABLE IF NOT EXISTS platform_users (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, display_name TEXT, role TEXT NOT NULL DEFAULT 'customer', retailer_store_id TEXT, active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(retailer_store_id) REFERENCES stores(id))",
+  "CREATE TABLE IF NOT EXISTS retail_plans (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL, price_cents INTEGER NOT NULL, monthly_flyer_limit INTEGER NOT NULL, monthly_ai_extraction_limit INTEGER NOT NULL, store_limit INTEGER NOT NULL, analytics_level TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)",
+  "CREATE TABLE IF NOT EXISTS retailer_subscriptions (id TEXT PRIMARY KEY, retailer_user_id TEXT NOT NULL, plan_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', provider TEXT NOT NULL DEFAULT 'mercado_pago', provider_reference TEXT, current_period_end TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(retailer_user_id) REFERENCES platform_users(id), FOREIGN KEY(plan_id) REFERENCES retail_plans(id))",
+  "CREATE TABLE IF NOT EXISTS flyer_ingestion_jobs (id TEXT PRIMARY KEY, store_id TEXT NOT NULL, submitted_by_user_id TEXT NOT NULL, image_key TEXT NOT NULL, image_content_type TEXT NOT NULL, original_filename TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'queued', ai_model TEXT, extracted_count INTEGER NOT NULL DEFAULT 0, error_message TEXT, created_at TEXT NOT NULL, analyzed_at TEXT, published_at TEXT, FOREIGN KEY(store_id) REFERENCES stores(id), FOREIGN KEY(submitted_by_user_id) REFERENCES platform_users(id))",
+  "CREATE TABLE IF NOT EXISTS flyer_offer_candidates (id TEXT PRIMARY KEY, job_id TEXT NOT NULL, product_name TEXT NOT NULL, brand TEXT NOT NULL, category TEXT NOT NULL, measure TEXT NOT NULL, price_cents INTEGER NOT NULL, valid_from TEXT, valid_until TEXT, confidence INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'pending_review', created_at TEXT NOT NULL, published_observation_id TEXT, FOREIGN KEY(job_id) REFERENCES flyer_ingestion_jobs(id))",
   "CREATE INDEX IF NOT EXISTS idx_price_observations_store_product_observed ON price_observations(store_id, product_id, observed_at)",
   "CREATE INDEX IF NOT EXISTS idx_price_observations_product_expires ON price_observations(product_id, expires_at)",
   "CREATE INDEX IF NOT EXISTS idx_contributions_status_submitted ON community_contributions(status, submitted_at)",
   "CREATE INDEX IF NOT EXISTS idx_alert_preferences_product_target_active ON consumer_price_alerts(product_id, target_cents, active)",
   "CREATE INDEX IF NOT EXISTS idx_notifications_contributor_created ON community_notifications(contributor_id, created_at)",
+  "CREATE INDEX IF NOT EXISTS idx_platform_users_role_active ON platform_users(role, active)",
+  "CREATE INDEX IF NOT EXISTS idx_platform_users_retailer_store ON platform_users(retailer_store_id)",
+  "CREATE INDEX IF NOT EXISTS idx_subscriptions_retailer_status ON retailer_subscriptions(retailer_user_id, status)",
+  "CREATE INDEX IF NOT EXISTS idx_subscriptions_plan_status ON retailer_subscriptions(plan_id, status)",
+  "CREATE INDEX IF NOT EXISTS idx_flyer_jobs_store_status_created ON flyer_ingestion_jobs(store_id, status, created_at)",
+  "CREATE INDEX IF NOT EXISTS idx_flyer_jobs_submitter_created ON flyer_ingestion_jobs(submitted_by_user_id, created_at)",
+  "CREATE INDEX IF NOT EXISTS idx_flyer_candidates_job_status ON flyer_offer_candidates(job_id, status)",
+  "CREATE INDEX IF NOT EXISTS idx_flyer_candidates_status_created ON flyer_offer_candidates(status, created_at)",
 ];
 
 export function ensureCuritibaDatabase(db: D1Database) {
@@ -35,6 +48,13 @@ async function setupDatabase(db: D1Database) {
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
   const artifactCapturedAt = new Map(rioVerdeFlyerArtifacts.map((artifact) => [artifact.id, artifact.capturedAt]));
   const commands = [
+    ...[
+      { id: "varejista-inicial", name: "Inicial", description: "Para começar a publicar ofertas com revisão.", priceCents: 9900, flyers: 4, ai: 4, stores: 1, analytics: "essencial" },
+      { id: "varejista-crescimento", name: "Crescimento", description: "Para redes locais com inteligência de preço.", priceCents: 24900, flyers: 20, ai: 20, stores: 5, analytics: "avançado" },
+      { id: "varejista-rede", name: "Rede", description: "Cobertura personalizada para múltiplas unidades.", priceCents: 0, flyers: 9999, ai: 9999, stores: 9999, analytics: "estratégico" },
+    ].map((plan) => db.prepare(
+      "INSERT OR IGNORE INTO retail_plans (id, name, description, price_cents, monthly_flyer_limit, monthly_ai_extraction_limit, store_limit, analytics_level, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)",
+    ).bind(plan.id, plan.name, plan.description, plan.priceCents, plan.flyers, plan.ai, plan.stores, plan.analytics, observedAt, observedAt)),
     ...communityCollectionStores.map((store) => db.prepare(
       "INSERT OR IGNORE INTO stores (id, name, city, neighborhood, latitude, longitude, active) VALUES (?, ?, ?, ?, ?, ?, 1)",
     ).bind(store.id, store.name, store.city, store.neighborhood, Math.round(store.latitude * 1_000_000), Math.round(store.longitude * 1_000_000))),

@@ -12,6 +12,7 @@ import {
 import { inspectParanaNfceQr, type NfceQrInspection } from "@/lib/nfce-qr";
 import { apiUrl, publicUrl } from "@/lib/client-config";
 import { StoreOffersPanel, type StoreOffer, type StoreOffersStatus } from "@/components/store-offers";
+import { PlatformPortal } from "@/components/platform-portal";
 
 type Category = "Essenciais" | "Limpeza" | "Bebidas" | "Hortifruti";
 
@@ -160,6 +161,7 @@ export default function Home() {
   const [receiptQrMessage, setReceiptQrMessage] = useState("");
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent>();
   const [installMessage, setInstallMessage] = useState("");
+  const [showPlatformPortal, setShowPlatformPortal] = useState(false);
   const [alertProductId, setAlertProductId] = useState("cafe-melitta-500g");
   const [alertTargetPrice, setAlertTargetPrice] = useState("");
   const [alertMessage, setAlertMessage] = useState("");
@@ -241,6 +243,13 @@ export default function Home() {
     } catch {
       setCommunityState("error");
     }
+  }, []);
+
+  useEffect(() => {
+    const portalTimer = window.setTimeout(() => {
+      if (window.localStorage.getItem("precocerto-platform-landing-seen") !== "true") setShowPlatformPortal(true);
+    }, 0);
+    return () => window.clearTimeout(portalTimer);
   }, []);
 
   useEffect(() => {
@@ -509,6 +518,8 @@ export default function Home() {
     URL.revokeObjectURL(href);
   };
 
+  if (showPlatformPortal) return <PlatformPortal onOpenShopping={() => setShowPlatformPortal(false)} onClose={() => setShowPlatformPortal(false)} />;
+
   return (
     <main>
       <div className="announcement"><span className="pulse" aria-hidden="true" />Cobertura piloto: Curitiba e Itaperuçu, Paraná <span className="announcement-separator">•</span><strong>{dataState === "live" ? "base local sincronizada" : "preços de demonstração"}</strong></div>
@@ -516,7 +527,7 @@ export default function Home() {
       <nav className="topbar" aria-label="Navegação principal">
         <a className="brand" href="#inicio" aria-label="PreçoCerto, início"><span className="brand-mark">p</span><span>preçocerto</span></a>
         <div className="nav-links"><a href="#ofertas">Ofertas</a><a href="#cesta">Minha cesta</a><a href="#mercados">Mercados</a><a href="#comunidade">Comunidade</a></div>
-        <div className="topbar-actions"><button className="install-app-button" onClick={() => void installApplication()}>Instalar app</button><button className="basket-button" onClick={() => document.getElementById("cesta")?.scrollIntoView({ behavior: "smooth" })}><span aria-hidden="true">⌑</span> Cesta <b>{basket.length}</b></button></div>
+        <div className="topbar-actions"><button className="account-button" onClick={() => setShowPlatformPortal(true)}>Minha conta</button><button className="install-app-button" onClick={() => void installApplication()}>Instalar app</button><button className="basket-button" onClick={() => document.getElementById("cesta")?.scrollIntoView({ behavior: "smooth" })}><span aria-hidden="true">⌑</span> Cesta <b>{basket.length}</b></button></div>
       </nav>
       {installMessage && <p className="pwa-status" role="status">{installMessage}</p>}
 

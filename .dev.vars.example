@@ -1,1 +1,10 @@
 IMPORT_API_KEY=troque-por-uma-chave-forte-antes-de-importar-dados
+
+# Backend: mantenha estas chaves somente no ambiente do Worker.
+SUPABASE_JWT_SECRET=segredo-jwt-do-supabase
+ADMIN_BOOTSTRAP_EMAIL=seu-email-administrador@exemplo.com
+OPENAI_API_KEY=chave-da-api-openai-para-leitura-de-folhetos
+OPENAI_FLYER_MODEL=gpt-4.1-mini
+MERCADO_PAGO_ACCESS_TOKEN=access-token-do-mercado-pago
+PUBLIC_APP_URL=https://andreabrao.github.io/precocerto
+API_PUBLIC_URL=https://sua-api.exemplo.com
