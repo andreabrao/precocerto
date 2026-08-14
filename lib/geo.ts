@@ -85,12 +85,13 @@ export function isValidGeoPoint(point: GeoPoint) {
 
 export function getPilotCoverageForPoint(point: GeoPoint) {
   if (!isValidGeoPoint(point)) return undefined;
-  return pilotCoverage.find((coverage) =>
+  const matches = pilotCoverage.filter((coverage) =>
     point.latitude <= coverage.bounds.north
     && point.latitude >= coverage.bounds.south
     && point.longitude <= coverage.bounds.east
     && point.longitude >= coverage.bounds.west,
   );
+  return matches.sort((left, right) => distanceInKm(point, left) - distanceInKm(point, right))[0];
 }
 
 export function isWithinPilotCoverage(point: GeoPoint) {

@@ -207,6 +207,10 @@ export async function getComparison(db: D1Database, requestedIds: string[], sear
     })
     .filter((store) => !normalizedSearch.location || store.distanceKm <= normalizedSearch.radiusKm)
     .sort((left, right) => {
+      const leftCompleteBasket = left.itemCount === productIds.length;
+      const rightCompleteBasket = right.itemCount === productIds.length;
+      if (leftCompleteBasket !== rightCompleteBasket) return leftCompleteBasket ? -1 : 1;
+      if (!leftCompleteBasket && left.itemCount !== right.itemCount) return right.itemCount - left.itemCount;
       const leftHasBasketItems = left.itemCount > 0;
       const rightHasBasketItems = right.itemCount > 0;
       if (leftHasBasketItems !== rightHasBasketItems) return leftHasBasketItems ? -1 : 1;
