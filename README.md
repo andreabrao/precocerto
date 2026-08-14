@@ -45,8 +45,8 @@ O PreçoCerto usa o **Supabase Auth** para os logins de cliente, varejista e adm
 1. Crie ou escolha um projeto em [Supabase](https://supabase.com/dashboard) e, em **Authentication > Providers > Email**, habilite email/senha.
 2. Em **Authentication > URL Configuration**, adicione `https://andreabrao.github.io/precocerto/` em *Site URL* e em *Redirect URLs*.
 3. Em **Settings > API**, copie a **Project URL** e a chave **anon/public**. Nunca copie nem use a chave `service_role` no frontend ou no repositório.
-4. No GitHub, em **Settings > Secrets and variables > Actions > Variables**, crie `PRECOCERTO_SUPABASE_URL` e `PRECOCERTO_SUPABASE_ANON_KEY` com esses dois valores. O workflow injeta-os no frontend estático.
-5. No ambiente do Worker, configure `SUPABASE_URL` e `SUPABASE_ANON_KEY`; opcionalmente defina `ADMIN_BOOTSTRAP_EMAIL` com o email que será o primeiro administrador. Depois publique uma nova versão do backend.
+4. No ambiente do Worker, configure `SUPABASE_URL` e `SUPABASE_ANON_KEY`; opcionalmente defina `ADMIN_BOOTSTRAP_EMAIL` com o email que será o primeiro administrador. Depois publique uma nova versão do backend.
+5. O GitHub Pages busca essa configuração pública no Worker em tempo de execução. As variáveis `PRECOCERTO_SUPABASE_URL` e `PRECOCERTO_SUPABASE_ANON_KEY` continuam aceitas no workflow, mas são opcionais.
 
 Quando a confirmação de email estiver habilitada no Supabase, o usuário deve confirmar a conta antes do primeiro acesso. Para o piloto, também é possível desativar temporariamente **Confirm email** em *Authentication > Providers > Email*.
 

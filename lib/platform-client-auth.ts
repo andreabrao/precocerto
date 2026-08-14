@@ -13,13 +13,29 @@ export type PlatformAccount = {
 
 type AuthSession = { access_token: string; refresh_token?: string };
 
-const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL ?? "").trim().replace(/\/+$/, "");
-const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY ?? "").trim();
+let supabaseUrl = (import.meta.env.VITE_SUPABASE_URL ?? "").trim().replace(/\/+$/, "");
+let supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY ?? "").trim();
 const sessionKey = "precocerto-platform-session";
 const landingSeenKey = "precocerto-platform-landing-seen";
 
 export function isAuthConfigured() {
   return Boolean(supabaseUrl && supabaseAnonKey);
+}
+
+export async function loadSupabaseConfiguration() {
+  if (isAuthConfigured()) return true;
+  try {
+    const response = await fetch(apiUrl("/api/platform/config"));
+    const payload = await response.json().catch(() => ({})) as { supabaseUrl?: string; supabaseAnonKey?: string };
+    const nextUrl = payload.supabaseUrl?.trim().replace(/\/+$/, "") ?? "";
+    const nextAnonKey = payload.supabaseAnonKey?.trim() ?? "";
+    if (!nextUrl || !nextAnonKey) return false;
+    supabaseUrl = nextUrl;
+    supabaseAnonKey = nextAnonKey;
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function hasSeenLanding() {

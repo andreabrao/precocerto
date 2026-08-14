@@ -7,6 +7,7 @@ import {
   fetchPlatformAccount,
   hasSeenLanding,
   isAuthConfigured,
+  loadSupabaseConfiguration,
   loadSession,
   rememberLandingSeen,
   signInWithPassword,
@@ -106,9 +107,9 @@ export function PlatformPortal({ onOpenShopping, onClose }: { onOpenShopping: ()
 
   const authenticate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!isAuthConfigured()) { setMessage("Conecte o Supabase para liberar os logins reais."); return; }
     setBusy(true); setMessage("");
     try {
+      if (!isAuthConfigured() && !await loadSupabaseConfiguration()) throw new Error("Os logins ainda estão sendo configurados. Tente novamente em alguns minutos.");
       const session = isRegistering ? await signUpWithPassword(email, password, displayName) : await signInWithPassword(email, password);
       const profile = await fetchPlatformAccount(session.access_token);
       rememberLandingSeen();
