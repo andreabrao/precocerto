@@ -1,12 +1,12 @@
 {
-  "id": "/",
+  "id": ".",
   "name": "PreçoCerto — compras locais",
   "short_name": "PreçoCerto",
   "description": "Compare ofertas, contribua com etiquetas e receba alertas de preço em Curitiba e Itaperuçu.",
   "lang": "pt-BR",
   "dir": "ltr",
-  "start_url": "/",
-  "scope": "/",
+  "start_url": ".",
+  "scope": ".",
   "display": "standalone",
   "orientation": "portrait-primary",
   "background_color": "#fbfaf4",
@@ -14,7 +14,7 @@
   "categories": ["shopping", "lifestyle"],
   "icons": [
     {
-      "src": "/app-icon.svg",
+      "src": "./app-icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any maskable"

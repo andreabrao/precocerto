@@ -21,6 +21,32 @@ pnpm run dev
 
 Abra `http://localhost:3000`. A base local é criada e preenchida automaticamente na primeira chamada à API.
 
+### Simular o frontend do GitHub Pages
+
+Mantenha o backend acima em execução e, em outro terminal, inicie o frontend estático:
+
+```bash
+VITE_API_BASE_URL=http://localhost:3000 pnpm run dev:pages
+```
+
+O endereço exibido pelo Vite usa somente arquivos estáticos e chama as APIs no backend configurado por `VITE_API_BASE_URL`.
+
+## Arquitetura de publicação
+
+- **Frontend:** GitHub Pages, gerado em `dist-pages/` por `pnpm run build:pages`.
+- **APIs:** Worker separado, responsável por `/api/**`, D1 e R2.
+- **Integração:** o frontend recebe a origem HTTPS do Worker em `VITE_API_BASE_URL`; nenhuma chave ou credencial do backend entra no bundle público.
+- **CORS:** o Worker aceita `https://andreabrao.github.io` por padrão. Para domínio próprio ou outra origem, configure `FRONTEND_ORIGIN` no Worker; várias origens podem ser separadas por vírgula.
+
+## Publicar no GitHub Pages
+
+1. Publique primeiro o backend e confirme uma URL HTTPS estável para o Worker.
+2. O workflow já usa o Worker atual. Se a origem da API mudar, crie a variável `PRECOCERTO_API_BASE_URL` em **Settings > Secrets and variables > Actions > Variables** com a nova URL, sem o caminho `/api`.
+3. Em **Settings > Pages > Build and deployment**, selecione **GitHub Actions**.
+4. Envie as alterações para `main` ou execute manualmente o workflow **Publicar frontend no GitHub Pages**.
+
+O workflow usa o caminho-base informado pelo próprio GitHub Pages, por isso funciona tanto em `andreabrao.github.io/precocerto/` quanto com domínio próprio. Se usar domínio próprio, inclua também a origem desse domínio em `FRONTEND_ORIGIN` no Worker.
+
 ## Aplicativo instalável (PWA)
 
 O PreçoCerto pode ser instalado pelo botão **Instalar app**. No celular, quando o navegador não exibir o aviso automático, abra o menu do navegador e escolha **Instalar aplicativo** ou **Adicionar à tela inicial**.

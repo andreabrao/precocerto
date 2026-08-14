@@ -7,10 +7,12 @@
   },
   "scripts": {
     "dev": "vinext dev",
+    "dev:pages": "vite --config vite.frontend.config.ts",
     "build": "vinext build",
+    "build:pages": "vite build --config vite.frontend.config.ts",
     "start": "vinext start",
     "test": "pnpm run build && node --test tests/rendered-html.test.mjs",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern dist-pages --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
@@ -42,5 +44,6 @@
     "vite": "8.0.13",
     "wrangler": "4.92.0"
   },
+  "packageManager": "pnpm@11.19.0",
   "type": "module"
 }

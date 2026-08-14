@@ -1,5 +1,7 @@
-const CACHE_NAME = "precocerto-shell-v1";
-const APP_SHELL = ["/", "/manifest.webmanifest", "/app-icon.svg", "/og.png"];
+const CACHE_NAME = "precocerto-shell-v2";
+const APP_ROOT = new URL("./", self.registration.scope).toString();
+const APP_SHELL = ["./", "manifest.webmanifest", "app-icon.svg", "og.png"]
+  .map((path) => new URL(path, APP_ROOT).toString());
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -24,7 +26,7 @@ async function networkFirst(request) {
     if (response.ok) await cache.put(request, response.clone());
     return response;
   } catch {
-    return (await cache.match(request)) ?? (await cache.match("/")) ?? new Response("Você está offline.", { status: 503 });
+    return (await cache.match(request)) ?? (await cache.match(APP_ROOT)) ?? new Response("Você está offline.", { status: 503 });
   }
 }
 

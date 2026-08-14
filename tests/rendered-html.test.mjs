@@ -37,6 +37,38 @@ test("server-renders the Curitiba and Itaperuçu geolocalized MVP", async () => 
   assert.doesNotMatch(html, /Building your site|react-loading-skeleton|codex-preview/i);
 });
 
+test("allows the GitHub Pages frontend to call the separate API", async () => {
+  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
+  workerUrl.searchParams.set("cors-test", `${process.pid}-${Date.now()}`);
+  const { default: worker } = await import(workerUrl.href);
+  const env = {
+    ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) },
+  };
+  const ctx = { waitUntil() {}, passThroughOnException() {} };
+
+  const allowed = await worker.fetch(
+    new Request("http://localhost/api/comparison", {
+      method: "OPTIONS",
+      headers: { Origin: "https://andreabrao.github.io" },
+    }),
+    env,
+    ctx,
+  );
+  assert.equal(allowed.status, 204);
+  assert.equal(allowed.headers.get("access-control-allow-origin"), "https://andreabrao.github.io");
+
+  const denied = await worker.fetch(
+    new Request("http://localhost/api/comparison", {
+      method: "OPTIONS",
+      headers: { Origin: "https://example.invalid" },
+    }),
+    env,
+    ctx,
+  );
+  assert.equal(denied.status, 403);
+  assert.equal(denied.headers.get("access-control-allow-origin"), null);
+});
+
 test("keeps the generated social card, geolocation model, and protected import in the project", async () => {
   const [page, layout, css, schema, bootstrap, queryModule, comparisonRoute, importRoute, geo, nfceQr, rioVerdeFlyer, socialOffers, serviceWorker, manifest, example, community, contributionRoute, hosting] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),

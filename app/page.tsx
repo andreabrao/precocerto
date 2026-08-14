@@ -10,6 +10,7 @@ import {
   type GeoPoint,
 } from "@/lib/geo";
 import { inspectParanaNfceQr, type NfceQrInspection } from "@/lib/nfce-qr";
+import { apiUrl, publicUrl } from "@/lib/client-config";
 
 type Category = "Essenciais" | "Limpeza" | "Bebidas" | "Hortifruti";
 
@@ -184,7 +185,7 @@ export default function Home() {
       radiusKm: String(radiusKm),
       sort: sortBy,
     });
-    fetch(`/api/comparison?${query.toString()}`, { signal: controller.signal })
+    fetch(apiUrl(`/api/comparison?${query.toString()}`), { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error("comparison unavailable");
         const payload = (await response.json()) as { stores?: StoreResult[] };
@@ -204,7 +205,7 @@ export default function Home() {
   useEffect(() => {
     if (activeTab !== "pricing") return;
     const controller = new AbortController();
-    fetch("/api/pricing/radar?store=festval-batel", { signal: controller.signal })
+    fetch(apiUrl("/api/pricing/radar?store=festval-batel"), { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error("radar unavailable");
         const payload = (await response.json()) as { alerts?: RadarAlert[]; coveragePercentage?: number };
@@ -217,7 +218,7 @@ export default function Home() {
 
   const refreshCommunity = useCallback(async (id?: string) => {
     try {
-      const response = await fetch(id ? `/api/community/summary?contributorId=${encodeURIComponent(id)}` : "/api/community/leaderboard");
+      const response = await fetch(apiUrl(id ? `/api/community/summary?contributorId=${encodeURIComponent(id)}` : "/api/community/leaderboard"));
       if (!response.ok) throw new Error("community unavailable");
       const payload = (await response.json()) as {
         profile?: CommunityProfile;
@@ -242,7 +243,7 @@ export default function Home() {
 
   useEffect(() => {
     if ("serviceWorker" in navigator) {
-      void navigator.serviceWorker.register("/service-worker.js").catch(() => undefined);
+      void navigator.serviceWorker.register(publicUrl("service-worker.js"), { scope: publicUrl() }).catch(() => undefined);
     }
 
     const onBeforeInstallPrompt = (event: Event) => {
@@ -304,7 +305,7 @@ export default function Home() {
     event.preventDefault();
     setContributionMessage("");
     try {
-      const response = await fetch("/api/community/contributors", {
+      const response = await fetch(apiUrl("/api/community/contributors"), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ displayName }),
@@ -405,7 +406,7 @@ export default function Home() {
     form.append("locationConsent", "true");
     form.append("photo", contributionFile);
     try {
-      const response = await fetch("/api/community/contributions", { method: "POST", body: form });
+      const response = await fetch(apiUrl("/api/community/contributions"), { method: "POST", body: form });
       const payload = (await response.json()) as { contribution?: { status: string; pointsAwarded: number; awaiting?: string }; error?: string };
       if (!response.ok || !payload.contribution) throw new Error(payload.error ?? "Não foi possível enviar a etiqueta.");
       setContributionFile(undefined);
@@ -427,7 +428,7 @@ export default function Home() {
       return;
     }
     try {
-      const response = await fetch("/api/community/alerts/preferences", {
+      const response = await fetch(apiUrl("/api/community/alerts/preferences"), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ contributorId, productId: alertProductId, targetCents }),
@@ -443,7 +444,7 @@ export default function Home() {
 
   const markAlertsRead = async () => {
     if (!contributorId) return;
-    await fetch("/api/community/alerts/read", {
+    await fetch(apiUrl("/api/community/alerts/read"), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ contributorId }),
@@ -455,7 +456,7 @@ export default function Home() {
     const product = basketProducts[0] ?? products[0];
     setFeedbackState("sending");
     try {
-      const response = await fetch("/api/feedback", {
+      const response = await fetch(apiUrl("/api/feedback"), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ storeId: activeStore.id, productId: product.id, reason: "Preço diferente na loja" }),
