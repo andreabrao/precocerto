@@ -8,6 +8,7 @@ import {
   type GeoPoint,
 } from "@/lib/geo";
 import { curitibaProducts, curitibaStores } from "@/lib/curitiba-data";
+import { comparableProductId, comparableProductMetadata, sourceProductIdsFor } from "@/lib/comparison-products";
 
 type LatestPriceRow = {
   storeId: string;
@@ -89,6 +90,44 @@ async function getLatestRows(db: D1Database, productIds: string[]) {
   return result.results ?? [];
 }
 
+async function getLatestCatalogRows(db: D1Database) {
+  const query = `
+    SELECT
+      s.id AS storeId, s.name AS storeName, s.city AS storeCity, s.neighborhood AS neighborhood,
+      s.latitude AS storeLatitude, s.longitude AS storeLongitude,
+      p.id AS productId, p.name AS productName, p.category AS category, p.brand AS brand,
+      p.measure AS measure, p.list_price_cents AS listPriceCents,
+      po.price_cents AS priceCents, po.artifact_id AS artifactId, po.observed_at AS observedAt,
+      po.expires_at AS expiresAt, po.confidence AS confidence
+    FROM price_observations po
+    INNER JOIN stores s ON s.id = po.store_id
+    INNER JOIN products p ON p.id = po.product_id
+    WHERE s.active = 1
+      AND p.active = 1
+      AND po.expires_at > ?
+      AND po.observed_at <= ?
+      AND po.observed_at = (
+        SELECT MAX(latest.observed_at)
+        FROM price_observations latest
+        WHERE latest.store_id = po.store_id
+          AND latest.product_id = po.product_id
+          AND latest.expires_at > ?
+          AND latest.observed_at <= ?
+      )
+    ORDER BY p.category, p.name, s.name
+  `;
+  const now = new Date().toISOString();
+  const result = await db.prepare(query).bind(now, now, now, now).all<LatestPriceRow>();
+  return result.results ?? [];
+}
+
+async function getKnownProductIds(db: D1Database, productIds: string[]) {
+  if (productIds.length === 0) return new Set<string>();
+  const placeholders = productIds.map(() => "?").join(", ");
+  const result = await db.prepare(`SELECT id FROM products WHERE active = 1 AND id IN (${placeholders})`).bind(...productIds).all<{ id: string }>();
+  return new Set((result.results ?? []).map((row) => row.id));
+}
+
 async function getActiveStoreOffers(db: D1Database, city?: string) {
   const cityCondition = city ? "AND s.city = ?" : "";
   const query = `
@@ -133,12 +172,15 @@ function normalizeSearch(search: ComparisonSearch) {
 }
 
 export async function getComparison(db: D1Database, requestedIds: string[], search: ComparisonSearch = {}) {
-  const productIds = requestedIds.length > 0
-    ? requestedIds.filter((id) => curitibaProducts.some((product) => product.id === id))
+  const requestedProductIds = requestedIds.length > 0
+    ? [...new Set(requestedIds)].slice(0, 20)
     : curitibaProducts.slice(0, 3).map((product) => product.id);
+  const sourceProductIds = [...new Set(requestedProductIds.flatMap(sourceProductIdsFor))];
+  const knownSourceProductIds = await getKnownProductIds(db, sourceProductIds);
+  const productIds = requestedProductIds.filter((productId) => sourceProductIdsFor(productId).some((sourceId) => knownSourceProductIds.has(sourceId)));
   const normalizedSearch = normalizeSearch(search);
   const [rows, activeStoreOffers] = await Promise.all([
-    getLatestRows(db, productIds),
+    getLatestRows(db, [...knownSourceProductIds]),
     getActiveStoreOffers(db, normalizedSearch.coverage?.city),
   ]);
   const stores = new Map<string, {
@@ -153,7 +195,7 @@ export async function getComparison(db: D1Database, requestedIds: string[], sear
     latestAt: string;
     confidenceSum: number;
     activeConfidence: number;
-    matchedItems: Map<string, { productId: string; priceCents: number }>;
+    matchedItems: Map<string, { productId: string; priceCents: number; observedAt: string }>;
   }>();
 
   for (const row of activeStoreOffers) {
@@ -188,9 +230,16 @@ export async function getComparison(db: D1Database, requestedIds: string[], sear
       activeConfidence: row.confidence,
       matchedItems: new Map(),
     };
-    current.itemCount += 1;
-    current.totalCents += row.priceCents;
-    current.matchedItems.set(row.productId, { productId: row.productId, priceCents: row.priceCents });
+    const comparisonProductId = comparableProductId(row.productId);
+    const existingItem = current.matchedItems.get(comparisonProductId);
+    if (!existingItem) {
+      current.itemCount += 1;
+      current.totalCents += row.priceCents;
+      current.matchedItems.set(comparisonProductId, { productId: comparisonProductId, priceCents: row.priceCents, observedAt: row.observedAt });
+    } else if (row.observedAt > existingItem.observedAt) {
+      current.totalCents += row.priceCents - existingItem.priceCents;
+      current.matchedItems.set(comparisonProductId, { productId: comparisonProductId, priceCents: row.priceCents, observedAt: row.observedAt });
+    }
     current.latestAt = current.latestAt > row.observedAt ? current.latestAt : row.observedAt;
     current.confidenceSum += row.confidence;
     stores.set(row.storeId, current);
@@ -230,7 +279,9 @@ export async function getComparison(db: D1Database, requestedIds: string[], sear
       itemCount: store.itemCount,
       activeOfferCount: store.activeOfferCount,
       totalCents: store.totalCents,
-      matchedItems: [...store.matchedItems.values()].sort((left, right) => left.productId.localeCompare(right.productId)),
+      matchedItems: [...store.matchedItems.values()]
+        .map(({ productId, priceCents }) => ({ productId, priceCents }))
+        .sort((left, right) => left.productId.localeCompare(right.productId)),
       latestAt: store.latestAt,
       distanceKm: store.distanceKm,
       coverage: store.coverage,
@@ -247,6 +298,60 @@ export async function getComparison(db: D1Database, requestedIds: string[], sear
       coverageCity: normalizedSearch.coverage?.city ?? "Curitiba",
     },
     stores: rankedStores,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+export async function getComparisonCatalog(db: D1Database, search: ComparisonSearch = {}) {
+  const normalizedSearch = normalizeSearch(search);
+  const rows = await getLatestCatalogRows(db);
+  const catalog = new Map<string, {
+    id: string;
+    name: string;
+    brand: string;
+    category: string;
+    measure: string;
+    pricesByStore: Map<string, { priceCents: number; observedAt: string }>;
+  }>();
+
+  for (const row of rows) {
+    if (normalizedSearch.coverage && row.storeCity !== normalizedSearch.coverage.city) continue;
+    const point = pointFromStore(row);
+    if (normalizedSearch.location && (!point || distanceInKm(normalizedSearch.location, point) > normalizedSearch.radiusKm)) continue;
+    const product = comparableProductMetadata(row.productId, {
+      name: row.productName,
+      brand: row.brand,
+      category: row.category,
+      measure: row.measure,
+    });
+    const current = catalog.get(product.id) ?? { ...product, pricesByStore: new Map() };
+    const existing = current.pricesByStore.get(row.storeId);
+    if (!existing || row.observedAt > existing.observedAt) {
+      current.pricesByStore.set(row.storeId, { priceCents: row.priceCents, observedAt: row.observedAt });
+    }
+    catalog.set(product.id, current);
+  }
+
+  const products = [...catalog.values()]
+    .map((product) => ({
+      id: product.id,
+      name: product.name,
+      brand: product.brand,
+      category: product.category,
+      measure: product.measure,
+      bestPriceCents: Math.min(...[...product.pricesByStore.values()].map((price) => price.priceCents)),
+      availableStoreCount: product.pricesByStore.size,
+    }))
+    .sort((left, right) => left.category.localeCompare(right.category, "pt-BR") || left.name.localeCompare(right.name, "pt-BR"));
+
+  return {
+    city: normalizedSearch.coverage?.city ?? "Curitiba",
+    search: {
+      radiusKm: normalizedSearch.radiusKm,
+      locationProvided: Boolean(normalizedSearch.location),
+      coverageCity: normalizedSearch.coverage?.city ?? "Curitiba",
+    },
+    products,
     generatedAt: new Date().toISOString(),
   };
 }

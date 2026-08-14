@@ -26,6 +26,16 @@ type Product = {
   accent: string;
 };
 
+type CatalogProduct = {
+  id: string;
+  name: string;
+  brand: string;
+  category: string;
+  measure: string;
+  bestPriceCents?: number;
+  availableStoreCount?: number;
+};
+
 type StoreResult = {
   id: string;
   name: string;
@@ -97,6 +107,17 @@ const products: Product[] = [
   { id: "tomate-italiano-kg", name: "Tomate italiano", measure: "1 kg", category: "Hortifruti", price: 8.49, previous: 11.99, accent: "tomato" },
 ];
 
+const fallbackCatalogProducts: CatalogProduct[] = products.map((product) => ({
+  id: product.id,
+  name: product.name,
+  brand: "",
+  category: product.category,
+  measure: product.measure,
+  bestPriceCents: Math.round(product.price * 100),
+  availableStoreCount: 1,
+}));
+const accentByCategory: Record<string, string> = { Essenciais: "rice", Mercearia: "rice", Laticínios: "milk", Bebidas: "milk", Limpeza: "clean", Hortifruti: "banana", Carnes: "tomato", Perfumaria: "clean", Pet: "banana", Bazar: "clean", Padaria: "cafe", Congelados: "milk", Saudáveis: "banana", Perecíveis: "tomato" };
+
 const fallbackStores: StoreResult[] = [
   { id: "muffato-portao", name: "Muffato Portão", distanceKm: 1.4, totalCents: 7261, coverage: 100, confidence: 100, itemCount: 3, activeOfferCount: 6 },
   { id: "condor-agua-verde", name: "Condor Água Verde", distanceKm: 2.1, totalCents: 7544, coverage: 100, confidence: 100, itemCount: 3, activeOfferCount: 6 },
@@ -124,8 +145,10 @@ const defaultConsumerLocation: ConsumerLocation = {
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<"consumer" | "pricing">("consumer");
-  const [category, setCategory] = useState<"Todos" | Category>("Todos");
+  const [category, setCategory] = useState("Todos");
   const [basket, setBasket] = useState<string[]>(["cafe-melitta-500g", "arroz-parboilizado-5kg", "leite-integral-1l"]);
+  const [catalogProducts, setCatalogProducts] = useState<CatalogProduct[]>(fallbackCatalogProducts);
+  const [productSearch, setProductSearch] = useState("");
   const [selectedStore, setSelectedStore] = useState(0);
   const [comparisonStores, setComparisonStores] = useState<StoreResult[]>(fallbackStores);
   const [storeOffers, setStoreOffers] = useState<StoreOffer[]>([]);
@@ -167,12 +190,24 @@ export default function Home() {
   const [alertTargetPrice, setAlertTargetPrice] = useState("");
   const [alertMessage, setAlertMessage] = useState("");
 
-  const filteredProducts = useMemo(
-    () => products.filter((product) => category === "Todos" || product.category === category),
-    [category],
-  );
-  const basketProducts = products.filter((product) => basket.includes(product.id));
-  const basketValue = basketProducts.reduce((total, product) => total + product.price, 0);
+  const catalogWithSelectedFallbacks = useMemo(() => {
+    const catalogIds = new Set(catalogProducts.map((product) => product.id));
+    const missingSelectedProducts = products
+      .filter((product) => basket.includes(product.id) && !catalogIds.has(product.id))
+      .map((product) => ({ id: product.id, name: product.name, brand: "", category: product.category, measure: product.measure }));
+    return [...catalogProducts, ...missingSelectedProducts];
+  }, [basket, catalogProducts]);
+  const catalogCategories = useMemo(() => ["Todos", ...[...new Set(catalogWithSelectedFallbacks.map((product) => product.category))].sort((left, right) => left.localeCompare(right, "pt-BR"))], [catalogWithSelectedFallbacks]);
+  const filteredProducts = useMemo(() => {
+    const search = productSearch.trim().toLocaleLowerCase("pt-BR");
+    return catalogWithSelectedFallbacks.filter((product) => {
+      const matchesCategory = category === "Todos" || product.category === category;
+      const searchable = `${product.name} ${product.brand} ${product.measure}`.toLocaleLowerCase("pt-BR");
+      return matchesCategory && (!search || searchable.includes(search));
+    });
+  }, [catalogWithSelectedFallbacks, category, productSearch]);
+  const basketProducts = basket.map((productId) => catalogWithSelectedFallbacks.find((product) => product.id === productId)).filter((product): product is CatalogProduct => Boolean(product));
+  const basketValue = basket.reduce((total, productId) => total + (products.find((product) => product.id === productId)?.price ?? 0), 0);
   const bestStore = comparisonStores[0] ?? fallbackStores[0];
   const activeStore = comparisonStores[selectedStore] ?? bestStore;
   const marketPricesByProduct = useMemo(() => {
@@ -232,6 +267,23 @@ export default function Home() {
     });
     return () => controller.abort();
   }, [basket, location, radiusKm, sortBy]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const query = new URLSearchParams({ lat: String(location.latitude), lng: String(location.longitude), radiusKm: String(radiusKm) });
+    fetch(apiUrl(`/api/catalog?${query.toString()}`), { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("catalog unavailable");
+        const payload = (await response.json()) as { products?: CatalogProduct[] };
+        if (!Array.isArray(payload.products)) throw new Error("invalid catalog");
+        setCatalogProducts(payload.products);
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setCatalogProducts(fallbackCatalogProducts);
+      });
+    return () => controller.abort();
+  }, [location, radiusKm]);
 
   useEffect(() => {
     if (activeTab !== "pricing") return;
@@ -585,13 +637,15 @@ export default function Home() {
           <div className="consumer-grid">
             <section className="basket-panel" id="cesta">
               <div className="section-heading"><div><p className="eyebrow">COMPARADOR</p><h2>Monte sua cesta</h2></div><span className="item-count">{basket.length} itens</span></div>
-              <div className="filters" aria-label="Categorias de produtos">{(["Todos", "Essenciais", "Hortifruti", "Limpeza", "Bebidas"] as const).map((item) => <button key={item} className={category === item ? "filter selected" : "filter"} onClick={() => setCategory(item)}>{item}</button>)}</div>
+              <div className="filters" aria-label="Categorias de produtos">{catalogCategories.map((item) => <button key={item} className={category === item ? "filter selected" : "filter"} onClick={() => setCategory(item)}>{item}</button>)}</div>
+              <label className="product-search"><span className="sr-only">Buscar produto no catálogo</span><input value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder={`Buscar entre ${catalogWithSelectedFallbacks.length} produtos cadastrados`} /></label>
               <div className="product-list">{filteredProducts.map((product) => {
                 const selected = basket.includes(product.id);
-                const livePriceCents = marketPricesByProduct.get(product.id);
-                const visiblePrice = dataState === "live" ? (livePriceCents === undefined ? undefined : livePriceCents / 100) : product.price;
-                const discount = visiblePrice === undefined ? 0 : Math.max(0, Math.round((1 - visiblePrice / product.previous) * 100));
-                return <article className="product-row" key={product.id}><div className={`product-art ${product.accent}`} aria-hidden="true"><span>{product.name.slice(0, 1)}</span></div><div className="product-copy"><strong>{product.name}</strong><span>{product.measure}</span></div><div className="product-price">{visiblePrice === undefined ? <><b>Sem preço local</b><span>Aguardando oferta</span></> : <><b>{formatCurrency(visiblePrice)}</b><span>{discount}% menor</span></>}</div><button className={selected ? "add-button added" : "add-button"} onClick={() => toggleBasket(product.id)} aria-pressed={selected}>{selected ? "✓" : "+"}<span className="sr-only">{selected ? "Remover da" : "Adicionar à"} cesta</span></button></article>;
+                const livePriceCents = marketPricesByProduct.get(product.id) ?? product.bestPriceCents;
+                const fallbackProduct = products.find((candidate) => candidate.id === product.id);
+                const visiblePrice = dataState === "live" ? (livePriceCents === undefined ? undefined : livePriceCents / 100) : fallbackProduct?.price;
+                const availability = dataState === "live" ? product.availableStoreCount && product.availableStoreCount > 1 ? `comparado em ${product.availableStoreCount} mercados` : "oferta em 1 mercado" : fallbackProduct ? `${Math.max(0, Math.round((1 - fallbackProduct.price / fallbackProduct.previous) * 100))}% menor` : "preço de referência";
+                return <article className="product-row" key={product.id}><div className={`product-art ${accentByCategory[product.category] ?? "cafe"}`} aria-hidden="true"><span>{product.name.slice(0, 1)}</span></div><div className="product-copy"><strong>{product.name}</strong><span>{product.brand ? `${product.brand} · ` : ""}{product.measure}</span></div><div className="product-price">{visiblePrice === undefined ? <><b>Sem preço local</b><span>Aguardando oferta</span></> : <><b>{formatCurrency(visiblePrice)}</b><span>{availability}</span></>}</div><button className={selected ? "add-button added" : "add-button"} onClick={() => toggleBasket(product.id)} aria-pressed={selected}>{selected ? "✓" : "+"}<span className="sr-only">{selected ? "Remover da" : "Adicionar à"} cesta</span></button></article>;
               })}</div>
               <div className="basket-total"><span>{hasCompleteLiveBasket ? "Total da melhor combinação local" : hasPartialLiveBasket ? `Preços localizados em ${matchedBasketCount} de ${basket.length} itens` : dataState === "live" ? "Nenhum preço atual encontrado" : "Total estimado na melhor combinação"}</span><strong>{hasPartialLiveBasket ? formatCurrency(matchedBasketCents / 100) : dataState === "live" ? "—" : formatCurrency(basketValue)}</strong></div>
             </section>
