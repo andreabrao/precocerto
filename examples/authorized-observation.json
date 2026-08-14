@@ -1,0 +1,9 @@
+{
+  "storeId": "muffato-portao",
+  "productId": "cafe-melitta-500g",
+  "priceCents": 1899,
+  "sourceType": "official_flyer",
+  "sourceUrl": "https://fonte-autorizada.exemplo/encarte-curitiba",
+  "expiresAt": "2026-08-21T23:59:59.000Z",
+  "confidence": 92
+}

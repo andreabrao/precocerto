@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1786720038250,
+      "tag": "0000_real_sharon_carter",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1786722433680,
+      "tag": "0001_slippery_centennial",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1786723088270,
+      "tag": "0002_tranquil_triton",
+      "breakpoints": true
+    }
+  ]
+}
