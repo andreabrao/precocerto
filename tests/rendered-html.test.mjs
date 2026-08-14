@@ -145,3 +145,21 @@ test("keeps the generated social card, geolocation model, and protected import i
   assert.match(contributionRoute, /MAX_PHOTO_BYTES/);
   assert.match(hosting, /CONTRIBUTION_IMAGES/);
 });
+
+test("connects a selected market to its active offers and source images", async () => {
+  const [page, queries, storeOffersRoute, panel] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../db/queries.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/store-offers/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../components/store-offers.tsx", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(page, /showStoreOffers/);
+  assert.match(page, /StoreOffersPanel/);
+  assert.match(queries, /getStoreOffers/);
+  assert.match(storeOffersRoute, /ensureCuritibaDatabase/);
+  assert.match(panel, /rio-verde-bebidas\.jpeg/);
+  assert.match(panel, /Ver encarte/);
+  await access(new URL("../public/encartes/rio-verde-bebidas.jpeg", import.meta.url));
+  await access(new URL("../public/encartes/mercado-ramon.jpeg", import.meta.url));
+});

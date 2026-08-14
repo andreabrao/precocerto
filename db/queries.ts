@@ -18,10 +18,12 @@ type LatestPriceRow = {
   storeLongitude: number | null;
   productId: string;
   productName: string;
+  brand: string;
   category: string;
   measure: string;
   listPriceCents: number;
   priceCents: number;
+  artifactId: string | null;
   observedAt: string;
   expiresAt: string;
   confidence: number;
@@ -61,8 +63,10 @@ async function getLatestRows(db: D1Database, productIds: string[]) {
       s.id AS storeId, s.name AS storeName, s.city AS storeCity, s.neighborhood AS neighborhood,
       s.latitude AS storeLatitude, s.longitude AS storeLongitude,
       p.id AS productId, p.name AS productName, p.category AS category,
+      p.brand AS brand,
       p.measure AS measure, p.list_price_cents AS listPriceCents,
       po.price_cents AS priceCents, po.observed_at AS observedAt,
+      po.artifact_id AS artifactId,
       po.expires_at AS expiresAt, po.confidence AS confidence
     FROM price_observations po
     INNER JOIN stores s ON s.id = po.store_id
@@ -264,6 +268,50 @@ export async function getOffers(db: D1Database, category?: string) {
       confidence: row.confidence,
     }))
     .sort((a, b) => b.discountPercent - a.discountPercent);
+}
+
+export async function getStoreOffers(db: D1Database, storeId: string, limit = 36) {
+  const now = new Date().toISOString();
+  const safeLimit = Math.max(1, Math.min(limit, 60));
+  const query = `
+    SELECT
+      p.id AS productId, p.name AS productName, p.brand AS brand,
+      p.category AS category, p.measure AS measure,
+      po.price_cents AS priceCents, po.artifact_id AS artifactId,
+      po.observed_at AS observedAt, po.expires_at AS expiresAt,
+      po.confidence AS confidence
+    FROM price_observations po
+    INNER JOIN stores s ON s.id = po.store_id
+    INNER JOIN products p ON p.id = po.product_id
+    WHERE po.store_id = ?
+      AND s.active = 1
+      AND p.active = 1
+      AND po.expires_at > ?
+      AND po.observed_at <= ?
+      AND po.observed_at = (
+        SELECT MAX(latest.observed_at)
+        FROM price_observations latest
+        WHERE latest.store_id = po.store_id
+          AND latest.product_id = po.product_id
+          AND latest.expires_at > ?
+          AND latest.observed_at <= ?
+      )
+    ORDER BY po.price_cents ASC, p.name ASC
+    LIMIT ?
+  `;
+  const result = await db.prepare(query).bind(storeId, now, now, now, now, safeLimit).all<{
+    productId: string;
+    productName: string;
+    brand: string;
+    category: string;
+    measure: string;
+    priceCents: number;
+    artifactId: string | null;
+    observedAt: string;
+    expiresAt: string;
+    confidence: number;
+  }>();
+  return result.results ?? [];
 }
 
 export async function getPricingRadar(db: D1Database, anchorStoreId = "muffato-portao") {

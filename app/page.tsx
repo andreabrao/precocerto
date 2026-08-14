@@ -11,6 +11,7 @@ import {
 } from "@/lib/geo";
 import { inspectParanaNfceQr, type NfceQrInspection } from "@/lib/nfce-qr";
 import { apiUrl, publicUrl } from "@/lib/client-config";
+import { StoreOffersPanel, type StoreOffer, type StoreOffersStatus } from "@/components/store-offers";
 
 type Category = "Essenciais" | "Limpeza" | "Bebidas" | "Hortifruti";
 
@@ -125,6 +126,9 @@ export default function Home() {
   const [basket, setBasket] = useState<string[]>(["cafe-melitta-500g", "arroz-parboilizado-5kg", "leite-integral-1l"]);
   const [selectedStore, setSelectedStore] = useState(0);
   const [comparisonStores, setComparisonStores] = useState<StoreResult[]>(fallbackStores);
+  const [storeOffers, setStoreOffers] = useState<StoreOffer[]>([]);
+  const [storeOffersState, setStoreOffersState] = useState<StoreOffersStatus>("idle");
+  const [offersStore, setOffersStore] = useState<StoreResult>();
   const [dataState, setDataState] = useState<"loading" | "live" | "fallback">("loading");
   const [radar, setRadar] = useState<RadarAlert[]>(fallbackRadar);
   const [radarCoverage, setRadarCoverage] = useState(86);
@@ -192,6 +196,9 @@ export default function Home() {
         if (!Array.isArray(payload.stores)) throw new Error("invalid comparison");
         setComparisonStores(payload.stores);
         setSelectedStore(0);
+        setStoreOffers([]);
+        setOffersStore(undefined);
+        setStoreOffersState("idle");
         setDataState("live");
       })
       .catch((error: unknown) => {
@@ -452,6 +459,27 @@ export default function Home() {
     await refreshCommunity(contributorId);
   };
 
+  const showStoreOffers = async (store: StoreResult, index: number) => {
+    setSelectedStore(index);
+    setOffersStore(store);
+    setStoreOffers([]);
+    setStoreOffersState("loading");
+    try {
+      const response = await fetch(apiUrl(`/api/store-offers?store=${encodeURIComponent(store.id)}`));
+      const payload = (await response.json()) as { offers?: StoreOffer[]; error?: string };
+      if (!response.ok || !Array.isArray(payload.offers)) throw new Error(payload.error ?? "Não foi possível carregar as promoções.");
+      setStoreOffers(payload.offers);
+      setStoreOffersState("ready");
+    } catch {
+      setStoreOffersState("error");
+    }
+  };
+
+  const closeStoreOffers = () => {
+    setStoreOffersState("idle");
+    setOffersStore(undefined);
+  };
+
   const sendFeedback = async () => {
     const product = basketProducts[0] ?? products[0];
     setFeedbackState("sending");
@@ -537,8 +565,9 @@ export default function Home() {
               <div className="section-heading"><div><p className="eyebrow">RESULTADO</p><h2>Onde vale mais</h2></div><span className="map-label">{location.city} · {radiusKm} KM</span></div>
               <div className="search-controls" aria-label="Preferências de comparação"><label>Raio<select value={radiusKm} onChange={(event) => setRadiusKm(Number(event.target.value))}>{[3, 5, 8, 12, 15].map((radius) => <option key={radius} value={radius}>{radius} km</option>)}</select></label><label>Priorizar<select value={sortBy} onChange={(event) => setSortBy(event.target.value as "price" | "distance")}><option value="price">Menor preço</option><option value="distance">Mais perto</option></select></label></div>
               <div className="map-surface" aria-label="Mapa ilustrativo dos mercados monitorados no raio selecionado"><span className="map-road road-one" /><span className="map-road road-two" /><span className="map-road road-three" /><span className="map-pin pin-one">1</span><span className="map-pin pin-two">2</span><span className="map-pin pin-three">3</span><span className="map-you">você</span></div>
-              {comparisonStores.length > 0 ? <><div className="store-list">{comparisonStores.map((store, index) => <button className={selectedStore === index ? "store-card selected" : "store-card"} key={store.id} onClick={() => setSelectedStore(index)}><span className={`rank ${toneByRank[index] ?? "orange"}`}>{index + 1}</span><span className="store-info"><b>{store.name}</b><small>{store.itemCount > 0 ? `${store.itemCount} de ${basketProducts.length} itens · ${store.distanceKm.toFixed(1).replace(".", ",")} km de você` : `${store.activeOfferCount} ofertas oficiais ativas · ${store.distanceKm.toFixed(1).replace(".", ",")} km de você`}</small></span><span className="store-total"><small>{store.itemCount === basketProducts.length ? index === 0 && sortBy === "price" ? "Melhor cesta" : "Cesta completa" : store.itemCount > 0 ? "Cesta parcial" : "Ofertas ativas"}</small><b>{store.itemCount > 0 ? formatCurrency(store.totalCents / 100) : `${store.activeOfferCount} ofertas`}</b></span></button>)}</div>
-              <button className="primary-cta">{activeStore.itemCount > 0 ? `Ver itens encontrados em ${activeStore.name}` : `Ver ofertas em ${activeStore.name}`} <span aria-hidden="true">→</span></button>
+              {comparisonStores.length > 0 ? <><div className="store-list">{comparisonStores.map((store, index) => <button className={selectedStore === index ? "store-card selected" : "store-card"} key={store.id} onClick={() => void showStoreOffers(store, index)}><span className={`rank ${toneByRank[index] ?? "orange"}`}>{index + 1}</span><span className="store-info"><b>{store.name}</b><small>{store.itemCount > 0 ? `${store.itemCount} de ${basketProducts.length} itens · ${store.distanceKm.toFixed(1).replace(".", ",")} km de você` : `${store.activeOfferCount} ofertas oficiais ativas · ${store.distanceKm.toFixed(1).replace(".", ",")} km de você`}</small></span><span className="store-total"><small>{store.itemCount === basketProducts.length ? index === 0 && sortBy === "price" ? "Melhor cesta" : "Cesta completa" : store.itemCount > 0 ? "Cesta parcial" : "Ofertas ativas"}</small><b>{store.itemCount > 0 ? formatCurrency(store.totalCents / 100) : `${store.activeOfferCount} ofertas`}</b></span></button>)}</div>
+              <button className="primary-cta" onClick={() => void showStoreOffers(activeStore, selectedStore)}>{activeStore.itemCount > 0 ? `Ver itens encontrados em ${activeStore.name}` : `Ver ofertas em ${activeStore.name}`} <span aria-hidden="true">→</span></button>
+              <StoreOffersPanel store={offersStore} offers={storeOffers} status={storeOffersState} onClose={closeStoreOffers} />
               <button className="secondary-action" onClick={sendFeedback} disabled={feedbackState === "sending" || feedbackState === "sent"}>{feedbackState === "sent" ? "Obrigado por avisar" : feedbackState === "error" ? "Tentar reportar novamente" : "Encontrou preço diferente?"}</button></> : <p className="empty-results">Ainda não há mercados com preços validados neste raio em {location.city}. Envie uma etiqueta para ajudar a abrir essa cobertura.</p>}
             </aside>
           </div>
