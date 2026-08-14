@@ -153,6 +153,7 @@ export async function getComparison(db: D1Database, requestedIds: string[], sear
     latestAt: string;
     confidenceSum: number;
     activeConfidence: number;
+    matchedItems: Map<string, { productId: string; priceCents: number }>;
   }>();
 
   for (const row of activeStoreOffers) {
@@ -168,6 +169,7 @@ export async function getComparison(db: D1Database, requestedIds: string[], sear
       latestAt: row.latestAt,
       confidenceSum: 0,
       activeConfidence: row.confidence,
+      matchedItems: new Map(),
     });
   }
 
@@ -184,9 +186,11 @@ export async function getComparison(db: D1Database, requestedIds: string[], sear
       latestAt: row.observedAt,
       confidenceSum: 0,
       activeConfidence: row.confidence,
+      matchedItems: new Map(),
     };
     current.itemCount += 1;
     current.totalCents += row.priceCents;
+    current.matchedItems.set(row.productId, { productId: row.productId, priceCents: row.priceCents });
     current.latestAt = current.latestAt > row.observedAt ? current.latestAt : row.observedAt;
     current.confidenceSum += row.confidence;
     stores.set(row.storeId, current);
@@ -226,6 +230,7 @@ export async function getComparison(db: D1Database, requestedIds: string[], sear
       itemCount: store.itemCount,
       activeOfferCount: store.activeOfferCount,
       totalCents: store.totalCents,
+      matchedItems: [...store.matchedItems.values()].sort((left, right) => left.productId.localeCompare(right.productId)),
       latestAt: store.latestAt,
       distanceKm: store.distanceKm,
       coverage: store.coverage,

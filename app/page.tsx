@@ -35,6 +35,7 @@ type StoreResult = {
   confidence: number;
   itemCount: number;
   activeOfferCount: number;
+  matchedItems?: Array<{ productId: string; priceCents: number }>;
 };
 
 type ConsumerLocation = GeoPoint & {
@@ -172,9 +173,30 @@ export default function Home() {
   );
   const basketProducts = products.filter((product) => basket.includes(product.id));
   const basketValue = basketProducts.reduce((total, product) => total + product.price, 0);
-  const savings = basketProducts.reduce((total, product) => total + product.previous - product.price, 0);
   const bestStore = comparisonStores[0] ?? fallbackStores[0];
   const activeStore = comparisonStores[selectedStore] ?? bestStore;
+  const marketPricesByProduct = useMemo(() => {
+    const prices = new Map<string, number>();
+    for (const store of comparisonStores) {
+      for (const item of store.matchedItems ?? []) {
+        const currentPrice = prices.get(item.productId);
+        if (currentPrice === undefined || item.priceCents < currentPrice) prices.set(item.productId, item.priceCents);
+      }
+    }
+    return prices;
+  }, [comparisonStores]);
+  const matchedBasketCount = basket.filter((productId) => marketPricesByProduct.has(productId)).length;
+  const matchedBasketCents = basket.reduce((total, productId) => total + (marketPricesByProduct.get(productId) ?? 0), 0);
+  const completeBasketStores = basket.length > 0 ? comparisonStores.filter((store) => store.itemCount === basket.length) : [];
+  const bestCompleteBasketStore = completeBasketStores[0];
+  const hasCompleteLiveBasket = dataState === "live" && Boolean(bestCompleteBasketStore);
+  const hasPartialLiveBasket = dataState === "live" && matchedBasketCount > 0;
+  const comparableAverageCents = completeBasketStores.length > 0
+    ? completeBasketStores.reduce((sum, store) => sum + store.totalCents, 0) / completeBasketStores.length
+    : 0;
+  const coverageProgress = dataState === "live"
+    ? (basket.length === 0 ? 0 : Math.min(100, (matchedBasketCount / basket.length) * 100))
+    : Math.min(100, 38 + basket.length * 14);
   const unreadAlerts = communityNotifications.filter((notification) => !notification.readAt).length;
   const contributionStoreOptions = location.city === "Itaperuçu"
     ? [{ id: "community-itaperucu", name: "Outro mercado em Itaperuçu" }]
@@ -550,9 +572,9 @@ export default function Home() {
           <div className="trust-line"><span className="verified-icon" aria-hidden="true">✓</span>{location.source === "device" ? "Localização aproximada, sem histórico salvo." : "Escolha sua localização ou um bairro de referência."}</div>
         </div>
         <div className="hero-card" aria-label="Resumo de economia da sua cesta">
-          <div className="hero-card-top"><div><span className="mini-label">SUA ECONOMIA HOJE</span><strong>{formatCurrency(Math.max(savings, 0))}</strong></div><span className="hero-sparkle" aria-hidden="true">✦</span></div>
-          <p>Na sua cesta selecionada</p><div className="card-progress"><span style={{ width: `${Math.min(100, 38 + basket.length * 14)}%` }} /></div>
-          <div className="price-comparison"><div><small>menor cesta</small><b>{formatCurrency(bestStore.totalCents / 100)}</b></div><span>vs.</span><div><small>média local</small><b>{formatCurrency(comparisonStores.reduce((sum, store) => sum + store.totalCents, 0) / Math.max(comparisonStores.length, 1) / 100)}</b></div></div>
+          <div className="hero-card-top"><div><span className="mini-label">{hasCompleteLiveBasket ? "MELHOR CESTA LOCAL" : hasPartialLiveBasket ? "COBERTURA DA CESTA" : "SUA ECONOMIA HOJE"}</span><strong>{hasCompleteLiveBasket ? formatCurrency(bestCompleteBasketStore!.totalCents / 100) : hasPartialLiveBasket ? `${matchedBasketCount} de ${basket.length}` : formatCurrency(basketValue)}</strong></div><span className="hero-sparkle" aria-hidden="true">✦</span></div>
+          <p>{hasCompleteLiveBasket ? "Todos os itens com preço atual" : hasPartialLiveBasket ? "Itens com preço atual na sua região" : "Na sua cesta selecionada"}</p><div className="card-progress"><span style={{ width: `${coverageProgress}%` }} /></div>
+          {hasCompleteLiveBasket ? <div className="price-comparison"><div><small>menor cesta</small><b>{formatCurrency(bestCompleteBasketStore!.totalCents / 100)}</b></div><span>vs.</span><div><small>média local</small><b>{formatCurrency(comparableAverageCents / 100)}</b></div></div> : hasPartialLiveBasket ? <div className="price-comparison"><div><small>itens localizados</small><b>{formatCurrency(matchedBasketCents / 100)}</b></div><span>•</span><div><small>situação</small><b>cesta parcial</b></div></div> : <div className="price-comparison"><div><small>menor cesta</small><b>{formatCurrency(bestStore.totalCents / 100)}</b></div><span>vs.</span><div><small>média local</small><b>{formatCurrency(comparisonStores.reduce((sum, store) => sum + store.totalCents, 0) / Math.max(comparisonStores.length, 1) / 100)}</b></div></div>}
         </div>
       </section>
 
@@ -566,10 +588,12 @@ export default function Home() {
               <div className="filters" aria-label="Categorias de produtos">{(["Todos", "Essenciais", "Hortifruti", "Limpeza", "Bebidas"] as const).map((item) => <button key={item} className={category === item ? "filter selected" : "filter"} onClick={() => setCategory(item)}>{item}</button>)}</div>
               <div className="product-list">{filteredProducts.map((product) => {
                 const selected = basket.includes(product.id);
-                const discount = Math.round((1 - product.price / product.previous) * 100);
-                return <article className="product-row" key={product.id}><div className={`product-art ${product.accent}`} aria-hidden="true"><span>{product.name.slice(0, 1)}</span></div><div className="product-copy"><strong>{product.name}</strong><span>{product.measure}</span></div><div className="product-price"><b>{formatCurrency(product.price)}</b><span>{discount}% menor</span></div><button className={selected ? "add-button added" : "add-button"} onClick={() => toggleBasket(product.id)} aria-pressed={selected}>{selected ? "✓" : "+"}<span className="sr-only">{selected ? "Remover da" : "Adicionar à"} cesta</span></button></article>;
+                const livePriceCents = marketPricesByProduct.get(product.id);
+                const visiblePrice = dataState === "live" ? (livePriceCents === undefined ? undefined : livePriceCents / 100) : product.price;
+                const discount = visiblePrice === undefined ? 0 : Math.max(0, Math.round((1 - visiblePrice / product.previous) * 100));
+                return <article className="product-row" key={product.id}><div className={`product-art ${product.accent}`} aria-hidden="true"><span>{product.name.slice(0, 1)}</span></div><div className="product-copy"><strong>{product.name}</strong><span>{product.measure}</span></div><div className="product-price">{visiblePrice === undefined ? <><b>Sem preço local</b><span>Aguardando oferta</span></> : <><b>{formatCurrency(visiblePrice)}</b><span>{discount}% menor</span></>}</div><button className={selected ? "add-button added" : "add-button"} onClick={() => toggleBasket(product.id)} aria-pressed={selected}>{selected ? "✓" : "+"}<span className="sr-only">{selected ? "Remover da" : "Adicionar à"} cesta</span></button></article>;
               })}</div>
-              <div className="basket-total"><span>Total estimado na melhor combinação</span><strong>{formatCurrency(basketValue)}</strong></div>
+              <div className="basket-total"><span>{hasCompleteLiveBasket ? "Total da melhor combinação local" : hasPartialLiveBasket ? `Preços localizados em ${matchedBasketCount} de ${basket.length} itens` : dataState === "live" ? "Nenhum preço atual encontrado" : "Total estimado na melhor combinação"}</span><strong>{hasPartialLiveBasket ? formatCurrency(matchedBasketCents / 100) : dataState === "live" ? "—" : formatCurrency(basketValue)}</strong></div>
             </section>
 
             <aside className="stores-panel" id="mercados">
