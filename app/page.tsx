@@ -632,7 +632,7 @@ export default function Home() {
       <nav className="topbar" aria-label="Navegação principal">
         <a className="brand" href="#inicio" aria-label="PreçoCerto, início"><span className="brand-mark">p</span><span>preçocerto</span></a>
         <div className="nav-links"><a href="#ofertas">Ofertas</a><a href="#cesta">Minha cesta</a><a href="#mercados">Mercados</a><a href="#comunidade">Comunidade</a></div>
-        <div className="topbar-actions"><button className="account-button" onClick={() => setShowPlatformPortal(true)}>Minha conta</button><button className="install-app-button" onClick={() => void installApplication()}>Instalar app</button><button className="basket-button" onClick={() => document.getElementById("cesta")?.scrollIntoView({ behavior: "smooth" })}><span aria-hidden="true">⌑</span> Cesta <b>{basket.length}</b></button></div>
+        <div className="topbar-actions"><button className="account-button" aria-label="Minha conta" onClick={() => setShowPlatformPortal(true)}>Minha conta</button><button className="install-app-button" onClick={() => void installApplication()}>Instalar app</button><button className="basket-button" onClick={() => document.getElementById("cesta")?.scrollIntoView({ behavior: "smooth" })}><span aria-hidden="true">⌑</span> Cesta <b>{basket.length}</b></button></div>
       </nav>
       {installMessage && <p className="pwa-status" role="status">{installMessage}</p>}
 
