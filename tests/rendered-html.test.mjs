@@ -146,12 +146,14 @@ test("keeps the generated social card, geolocation model, and protected import i
   assert.match(hosting, /CONTRIBUTION_IMAGES/);
 });
 
-test("connects a selected market to its active offers and source images", async () => {
-  const [page, queries, storeOffersRoute, panel] = await Promise.all([
+test("connects a selected market to its active offers, source images, and normalized SKUs", async () => {
+  const [page, queries, storeOffersRoute, panel, comparisonProducts, flyerPublishRoute] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../db/queries.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/store-offers/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../components/store-offers.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../lib/comparison-products.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/platform/flyers/[id]/publish/route.ts", import.meta.url), "utf8"),
   ]);
 
   assert.match(page, /showStoreOffers/);
@@ -160,6 +162,11 @@ test("connects a selected market to its active offers and source images", async 
   assert.match(storeOffersRoute, /ensureCuritibaDatabase/);
   assert.match(panel, /rio-verde-bebidas\.jpeg/);
   assert.match(panel, /Ver encarte/);
+  assert.match(page, /Menor em/);
+  assert.match(queries, /bestStoreName/);
+  assert.match(comparisonProducts, /canonicalProductSku/);
+  assert.match(comparisonProducts, /sku-frimesa-linguica-toscana-kg/);
+  assert.match(flyerPublishRoute, /canonicalProductSku/);
   await access(new URL("../public/encartes/rio-verde-bebidas.jpeg", import.meta.url));
   await access(new URL("../public/encartes/mercado-ramon.jpeg", import.meta.url));
 });

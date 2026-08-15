@@ -311,7 +311,7 @@ export async function getComparisonCatalog(db: D1Database, search: ComparisonSea
     brand: string;
     category: string;
     measure: string;
-    pricesByStore: Map<string, { priceCents: number; observedAt: string }>;
+    pricesByStore: Map<string, { priceCents: number; observedAt: string; storeName: string }>;
   }>();
 
   for (const row of rows) {
@@ -327,21 +327,27 @@ export async function getComparisonCatalog(db: D1Database, search: ComparisonSea
     const current = catalog.get(product.id) ?? { ...product, pricesByStore: new Map() };
     const existing = current.pricesByStore.get(row.storeId);
     if (!existing || row.observedAt > existing.observedAt) {
-      current.pricesByStore.set(row.storeId, { priceCents: row.priceCents, observedAt: row.observedAt });
+      current.pricesByStore.set(row.storeId, { priceCents: row.priceCents, observedAt: row.observedAt, storeName: row.storeName });
     }
     catalog.set(product.id, current);
   }
 
   const products = [...catalog.values()]
-    .map((product) => ({
-      id: product.id,
-      name: product.name,
-      brand: product.brand,
-      category: product.category,
-      measure: product.measure,
-      bestPriceCents: Math.min(...[...product.pricesByStore.values()].map((price) => price.priceCents)),
-      availableStoreCount: product.pricesByStore.size,
-    }))
+    .map((product) => {
+      const prices = [...product.pricesByStore.values()]
+        .sort((left, right) => left.priceCents - right.priceCents || left.storeName.localeCompare(right.storeName, "pt-BR"));
+      const bestOffer = prices[0];
+      return {
+        id: product.id,
+        name: product.name,
+        brand: product.brand,
+        category: product.category,
+        measure: product.measure,
+        bestPriceCents: bestOffer.priceCents,
+        bestStoreName: bestOffer.storeName,
+        availableStoreCount: product.pricesByStore.size,
+      };
+    })
     .sort((left, right) => left.category.localeCompare(right.category, "pt-BR") || left.name.localeCompare(right.name, "pt-BR"));
 
   return {

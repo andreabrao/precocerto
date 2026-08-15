@@ -33,6 +33,7 @@ type CatalogProduct = {
   category: string;
   measure: string;
   bestPriceCents?: number;
+  bestStoreName?: string;
   availableStoreCount?: number;
 };
 
@@ -114,6 +115,7 @@ const fallbackCatalogProducts: CatalogProduct[] = products.map((product) => ({
   category: product.category,
   measure: product.measure,
   bestPriceCents: Math.round(product.price * 100),
+  bestStoreName: "Muffato Portão",
   availableStoreCount: 1,
 }));
 const accentByCategory: Record<string, string> = { Essenciais: "rice", Mercearia: "rice", Laticínios: "milk", Bebidas: "milk", Limpeza: "clean", Hortifruti: "banana", Carnes: "tomato", Perfumaria: "clean", Pet: "banana", Bazar: "clean", Padaria: "cafe", Congelados: "milk", Saudáveis: "banana", Perecíveis: "tomato" };
@@ -216,17 +218,19 @@ export default function Home() {
   const bestStore = comparisonStores[0] ?? fallbackStores[0];
   const activeStore = comparisonStores[selectedStore] ?? bestStore;
   const marketPricesByProduct = useMemo(() => {
-    const prices = new Map<string, number>();
+    const prices = new Map<string, { priceCents: number; storeName: string }>();
     for (const store of comparisonStores) {
       for (const item of store.matchedItems ?? []) {
         const currentPrice = prices.get(item.productId);
-        if (currentPrice === undefined || item.priceCents < currentPrice) prices.set(item.productId, item.priceCents);
+        if (!currentPrice || item.priceCents < currentPrice.priceCents || (item.priceCents === currentPrice.priceCents && store.name.localeCompare(currentPrice.storeName, "pt-BR") < 0)) {
+          prices.set(item.productId, { priceCents: item.priceCents, storeName: store.name });
+        }
       }
     }
     return prices;
   }, [comparisonStores]);
   const matchedBasketCount = basket.filter((productId) => marketPricesByProduct.has(productId)).length;
-  const matchedBasketCents = basket.reduce((total, productId) => total + (marketPricesByProduct.get(productId) ?? 0), 0);
+  const matchedBasketCents = basket.reduce((total, productId) => total + (marketPricesByProduct.get(productId)?.priceCents ?? 0), 0);
   const completeBasketStores = basket.length > 0 ? comparisonStores.filter((store) => store.itemCount === basket.length) : [];
   const bestCompleteBasketStore = completeBasketStores[0];
   const hasCompleteLiveBasket = dataState === "live" && Boolean(bestCompleteBasketStore);
@@ -673,10 +677,14 @@ export default function Home() {
               <label className="product-search"><span className="sr-only">Buscar produto no catálogo</span><input value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder={`Buscar entre ${catalogWithSelectedFallbacks.length} produtos cadastrados`} /></label>
               <div className="product-list">{filteredProducts.map((product) => {
                 const selected = basket.includes(product.id);
-                const livePriceCents = marketPricesByProduct.get(product.id) ?? product.bestPriceCents;
+                const lowestMarket = marketPricesByProduct.get(product.id);
+                const livePriceCents = lowestMarket?.priceCents ?? product.bestPriceCents;
                 const fallbackProduct = products.find((candidate) => candidate.id === product.id);
                 const visiblePrice = dataState === "live" ? (livePriceCents === undefined ? undefined : livePriceCents / 100) : dataState === "loading" ? undefined : fallbackProduct?.price;
-                const availability = dataState === "live" ? product.availableStoreCount && product.availableStoreCount > 1 ? `comparado em ${product.availableStoreCount} mercados` : "oferta em 1 mercado" : dataState === "loading" ? "Atualizando pela sua região" : fallbackProduct ? `${Math.max(0, Math.round((1 - fallbackProduct.price / fallbackProduct.previous) * 100))}% menor` : "preço de referência";
+                const lowestMarketName = lowestMarket?.storeName ?? product.bestStoreName;
+                const availability = dataState === "live"
+                  ? `${lowestMarketName ? `Menor em ${lowestMarketName}` : "Preço local encontrado"}${product.availableStoreCount && product.availableStoreCount > 1 ? ` · ${product.availableStoreCount} mercados` : ""}`
+                  : dataState === "loading" ? "Atualizando pela sua região" : fallbackProduct ? `Menor em Muffato Portão · ${Math.max(0, Math.round((1 - fallbackProduct.price / fallbackProduct.previous) * 100))}% menor` : "preço de referência";
                 return <article className="product-row" key={product.id}><div className={`product-art ${accentByCategory[product.category] ?? "cafe"}`} aria-hidden="true"><span>{visualByCategory[product.category] ?? "🛒"}</span></div><div className="product-copy"><strong>{product.name}</strong><span>{product.brand ? `${product.brand} · ` : ""}{product.measure}</span></div><div className="product-price">{visiblePrice === undefined ? <><b>Sem preço local</b><span>{dataState === "loading" ? availability : "Aguardando oferta"}</span></> : <><b>{formatCurrency(visiblePrice)}</b><span>{availability}</span></>}</div><button className={selected ? "add-button added" : "add-button"} onClick={() => toggleBasket(product.id)} aria-pressed={selected}>{selected ? "✓" : "+"}<span className="sr-only">{selected ? "Remover da" : "Adicionar à"} cesta</span></button></article>;
               })}</div>
               <div className="basket-total"><span>{dataState === "loading" ? "Atualizando os preços da cesta" : hasNoRegionalData ? "Dados locais indisponíveis agora" : hasCompleteLiveBasket ? "Total da melhor combinação local" : hasPartialLiveBasket ? `Preços localizados em ${matchedBasketCount} de ${basket.length} itens` : dataState === "live" ? "Nenhum preço atual encontrado" : "Total estimado na melhor combinação"}</span><strong>{dataState === "loading" || hasNoRegionalData ? "—" : hasPartialLiveBasket ? formatCurrency(matchedBasketCents / 100) : dataState === "live" ? "—" : formatCurrency(basketValue)}</strong></div>

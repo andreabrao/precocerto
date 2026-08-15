@@ -2,17 +2,16 @@ import { getRawDb } from "@/db";
 import { ensureCuritibaDatabase } from "@/db/bootstrap";
 import { getFlyerJob, listFlyerCandidates, requirePlatformRole, type FlyerCandidate } from "@/db/platform";
 import { requirePlatformIdentity } from "@/lib/platform-auth";
+import { canonicalProductSku } from "@/lib/comparison-products";
 
 export const dynamic = "force-dynamic";
 
 function productIdFor(candidate: { productName: string; brand: string; measure: string }) {
-  const value = `${candidate.brand}-${candidate.productName}-${candidate.measure}`
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
-  return `flyer-${value.slice(0, 110)}`;
+  return canonicalProductSku({
+    name: candidate.productName,
+    brand: candidate.brand,
+    measure: candidate.measure,
+  });
 }
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
