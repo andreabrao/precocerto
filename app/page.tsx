@@ -156,7 +156,10 @@ export default function Home() {
   const [storeOffersState, setStoreOffersState] = useState<StoreOffersStatus>("idle");
   const [offersStore, setOffersStore] = useState<StoreResult>();
   const storeOffersRequestId = useRef(0);
-  const [dataState, setDataState] = useState<"loading" | "live" | "fallback">("loading");
+  // A marcação inicial mantém o fallback útil no HTML estático. Assim que o
+  // navegador faz a primeira consulta, o efeito abaixo troca para "loading"
+  // e não deixa dados antigos serem exibidos durante uma mudança de região.
+  const [dataState, setDataState] = useState<"loading" | "live" | "fallback">("fallback");
   const [radar, setRadar] = useState<RadarAlert[]>(fallbackRadar);
   const [radarCoverage, setRadarCoverage] = useState(86);
   const [feedbackState, setFeedbackState] = useState<"idle" | "sending" | "sent" | "error">("idle");
@@ -228,12 +231,16 @@ export default function Home() {
   const bestCompleteBasketStore = completeBasketStores[0];
   const hasCompleteLiveBasket = dataState === "live" && Boolean(bestCompleteBasketStore);
   const hasPartialLiveBasket = dataState === "live" && matchedBasketCount > 0;
+  const hasNoLiveBasketCoverage = dataState === "live" && basket.length > 0 && !hasPartialLiveBasket;
+  const hasNoRegionalData = dataState === "fallback" && comparisonStores.length === 0;
   const comparableAverageCents = completeBasketStores.length > 0
     ? completeBasketStores.reduce((sum, store) => sum + store.totalCents, 0) / completeBasketStores.length
     : 0;
-  const coverageProgress = dataState === "live"
-    ? (basket.length === 0 ? 0 : Math.min(100, (matchedBasketCount / basket.length) * 100))
-    : Math.min(100, 38 + basket.length * 14);
+  const coverageProgress = dataState === "loading"
+    ? 34
+    : dataState === "live"
+      ? (basket.length === 0 ? 0 : Math.min(100, (matchedBasketCount / basket.length) * 100))
+      : Math.min(100, 38 + basket.length * 14);
   const unreadAlerts = communityNotifications.filter((notification) => !notification.readAt).length;
   const contributionStoreOptions = location.city === "Itaperuçu"
     ? [{ id: "community-itaperucu", name: "Outro mercado em Itaperuçu" }]
@@ -250,6 +257,17 @@ export default function Home() {
       radiusKm: String(radiusKm),
       sort: sortBy,
     });
+    // Não deixe resultados da cidade anterior visíveis enquanto a nova
+    // consulta é processada. Isso evita que Curitiba apareça em Itaperuçu
+    // por alguns segundos após uma troca de localização.
+    setDataState("loading");
+    setComparisonStores([]);
+    setSelectedStore(0);
+    storeOffersRequestId.current += 1;
+    setStoreOffers([]);
+    setOffersStore(undefined);
+    setStoreOffersState("idle");
+
     fetch(apiUrl(`/api/comparison?${query.toString()}`), { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error("comparison unavailable");
@@ -265,7 +283,9 @@ export default function Home() {
       })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
-        setComparisonStores(fallbackStores);
+        // O fallback contém apenas preços de demonstração de Curitiba. Nunca
+        // o reutilize para outra cidade, pois seria uma comparação incorreta.
+        setComparisonStores(location.city === "Curitiba" ? fallbackStores : []);
         storeOffersRequestId.current += 1;
         setOffersStore(undefined);
         setStoreOffersState("idle");
@@ -277,6 +297,7 @@ export default function Home() {
   useEffect(() => {
     const controller = new AbortController();
     const query = new URLSearchParams({ lat: String(location.latitude), lng: String(location.longitude), radiusKm: String(radiusKm) });
+    setCatalogProducts([]);
     fetch(apiUrl(`/api/catalog?${query.toString()}`), { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error("catalog unavailable");
@@ -286,7 +307,7 @@ export default function Home() {
       })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
-        setCatalogProducts(fallbackCatalogProducts);
+        setCatalogProducts(location.city === "Curitiba" ? fallbackCatalogProducts : []);
       });
     return () => controller.abort();
   }, [location, radiusKm]);
@@ -633,11 +654,11 @@ export default function Home() {
           </div>}
           <div className="trust-line"><span className="verified-icon" aria-hidden="true">✓</span>{location.source === "device" ? "Localização aproximada, sem histórico salvo." : "Escolha sua localização ou um bairro de referência."}</div>
         </div>
-        <div className="hero-card" aria-label="Resumo de economia da sua cesta">
+          <div className="hero-card" aria-label="Resumo de economia da sua cesta">
           <div className="hero-harvest" aria-hidden="true"><span className="harvest-leaf">🥬</span><span className="harvest-fruit">🍊</span><span className="harvest-apple">🍎</span><span className="harvest-basket">🧺</span></div>
-          <div className="hero-card-top"><div><span className="mini-label">{hasCompleteLiveBasket ? "MELHOR CESTA LOCAL" : hasPartialLiveBasket ? "COBERTURA DA CESTA" : "SUA ECONOMIA HOJE"}</span><strong>{hasCompleteLiveBasket ? formatCurrency(bestCompleteBasketStore!.totalCents / 100) : hasPartialLiveBasket ? `${matchedBasketCount} de ${basket.length}` : formatCurrency(basketValue)}</strong></div><span className="hero-sparkle" aria-hidden="true">✦</span></div>
-          <p>{hasCompleteLiveBasket ? "Todos os itens com preço atual" : hasPartialLiveBasket ? "Itens com preço atual na sua região" : "Na sua cesta selecionada"}</p><div className="card-progress"><span style={{ width: `${coverageProgress}%` }} /></div>
-          {hasCompleteLiveBasket ? <div className="price-comparison"><div><small>menor cesta</small><b>{formatCurrency(bestCompleteBasketStore!.totalCents / 100)}</b></div><span>vs.</span><div><small>média local</small><b>{formatCurrency(comparableAverageCents / 100)}</b></div></div> : hasPartialLiveBasket ? <div className="price-comparison"><div><small>itens localizados</small><b>{formatCurrency(matchedBasketCents / 100)}</b></div><span>•</span><div><small>situação</small><b>cesta parcial</b></div></div> : <div className="price-comparison"><div><small>menor cesta</small><b>{formatCurrency(bestStore.totalCents / 100)}</b></div><span>vs.</span><div><small>média local</small><b>{formatCurrency(comparisonStores.reduce((sum, store) => sum + store.totalCents, 0) / Math.max(comparisonStores.length, 1) / 100)}</b></div></div>}
+          <div className="hero-card-top"><div><span className="mini-label">{dataState === "loading" ? "ATUALIZANDO A REGIÃO" : hasNoRegionalData ? "DADOS INDISPONÍVEIS" : hasCompleteLiveBasket ? "MELHOR CESTA LOCAL" : hasPartialLiveBasket ? "COBERTURA DA CESTA" : hasNoLiveBasketCoverage ? "SEM COBERTURA PARA A CESTA" : "SUA ECONOMIA HOJE"}</span><strong>{dataState === "loading" || hasNoLiveBasketCoverage || hasNoRegionalData ? "—" : hasCompleteLiveBasket ? formatCurrency(bestCompleteBasketStore!.totalCents / 100) : hasPartialLiveBasket ? `${matchedBasketCount} de ${basket.length}` : formatCurrency(basketValue)}</strong></div><span className="hero-sparkle" aria-hidden="true">✦</span></div>
+          <p>{dataState === "loading" ? `Buscando preços em ${location.city}` : hasNoRegionalData ? `Não foi possível atualizar os preços em ${location.city}` : hasCompleteLiveBasket ? "Todos os itens com preço atual" : hasPartialLiveBasket ? "Itens com preço atual na sua região" : hasNoLiveBasketCoverage ? "Troque os itens da cesta por ofertas locais para comparar" : "Na sua cesta selecionada"}</p><div className="card-progress"><span style={{ width: `${coverageProgress}%` }} /></div>
+          {dataState === "loading" ? <div className="price-comparison"><div><small>status</small><b>sincronizando</b></div></div> : hasNoRegionalData ? <div className="price-comparison"><div><small>próximo passo</small><b>tente novamente em instantes</b></div></div> : hasCompleteLiveBasket ? <div className="price-comparison"><div><small>menor cesta</small><b>{formatCurrency(bestCompleteBasketStore!.totalCents / 100)}</b></div><span>vs.</span><div><small>média local</small><b>{formatCurrency(comparableAverageCents / 100)}</b></div></div> : hasPartialLiveBasket ? <div className="price-comparison"><div><small>itens localizados</small><b>{formatCurrency(matchedBasketCents / 100)}</b></div><span>•</span><div><small>situação</small><b>cesta parcial</b></div></div> : hasNoLiveBasketCoverage ? <div className="price-comparison"><div><small>próximo passo</small><b>adicione ofertas locais</b></div></div> : <div className="price-comparison"><div><small>menor cesta</small><b>{formatCurrency(bestStore.totalCents / 100)}</b></div><span>vs.</span><div><small>média local</small><b>{formatCurrency(comparisonStores.reduce((sum, store) => sum + store.totalCents, 0) / Math.max(comparisonStores.length, 1) / 100)}</b></div></div>}
         </div>
       </section>
 
@@ -654,21 +675,21 @@ export default function Home() {
                 const selected = basket.includes(product.id);
                 const livePriceCents = marketPricesByProduct.get(product.id) ?? product.bestPriceCents;
                 const fallbackProduct = products.find((candidate) => candidate.id === product.id);
-                const visiblePrice = dataState === "live" ? (livePriceCents === undefined ? undefined : livePriceCents / 100) : fallbackProduct?.price;
-                const availability = dataState === "live" ? product.availableStoreCount && product.availableStoreCount > 1 ? `comparado em ${product.availableStoreCount} mercados` : "oferta em 1 mercado" : fallbackProduct ? `${Math.max(0, Math.round((1 - fallbackProduct.price / fallbackProduct.previous) * 100))}% menor` : "preço de referência";
-                return <article className="product-row" key={product.id}><div className={`product-art ${accentByCategory[product.category] ?? "cafe"}`} aria-hidden="true"><span>{visualByCategory[product.category] ?? "🛒"}</span></div><div className="product-copy"><strong>{product.name}</strong><span>{product.brand ? `${product.brand} · ` : ""}{product.measure}</span></div><div className="product-price">{visiblePrice === undefined ? <><b>Sem preço local</b><span>Aguardando oferta</span></> : <><b>{formatCurrency(visiblePrice)}</b><span>{availability}</span></>}</div><button className={selected ? "add-button added" : "add-button"} onClick={() => toggleBasket(product.id)} aria-pressed={selected}>{selected ? "✓" : "+"}<span className="sr-only">{selected ? "Remover da" : "Adicionar à"} cesta</span></button></article>;
+                const visiblePrice = dataState === "live" ? (livePriceCents === undefined ? undefined : livePriceCents / 100) : dataState === "loading" ? undefined : fallbackProduct?.price;
+                const availability = dataState === "live" ? product.availableStoreCount && product.availableStoreCount > 1 ? `comparado em ${product.availableStoreCount} mercados` : "oferta em 1 mercado" : dataState === "loading" ? "Atualizando pela sua região" : fallbackProduct ? `${Math.max(0, Math.round((1 - fallbackProduct.price / fallbackProduct.previous) * 100))}% menor` : "preço de referência";
+                return <article className="product-row" key={product.id}><div className={`product-art ${accentByCategory[product.category] ?? "cafe"}`} aria-hidden="true"><span>{visualByCategory[product.category] ?? "🛒"}</span></div><div className="product-copy"><strong>{product.name}</strong><span>{product.brand ? `${product.brand} · ` : ""}{product.measure}</span></div><div className="product-price">{visiblePrice === undefined ? <><b>Sem preço local</b><span>{dataState === "loading" ? availability : "Aguardando oferta"}</span></> : <><b>{formatCurrency(visiblePrice)}</b><span>{availability}</span></>}</div><button className={selected ? "add-button added" : "add-button"} onClick={() => toggleBasket(product.id)} aria-pressed={selected}>{selected ? "✓" : "+"}<span className="sr-only">{selected ? "Remover da" : "Adicionar à"} cesta</span></button></article>;
               })}</div>
-              <div className="basket-total"><span>{hasCompleteLiveBasket ? "Total da melhor combinação local" : hasPartialLiveBasket ? `Preços localizados em ${matchedBasketCount} de ${basket.length} itens` : dataState === "live" ? "Nenhum preço atual encontrado" : "Total estimado na melhor combinação"}</span><strong>{hasPartialLiveBasket ? formatCurrency(matchedBasketCents / 100) : dataState === "live" ? "—" : formatCurrency(basketValue)}</strong></div>
+              <div className="basket-total"><span>{dataState === "loading" ? "Atualizando os preços da cesta" : hasNoRegionalData ? "Dados locais indisponíveis agora" : hasCompleteLiveBasket ? "Total da melhor combinação local" : hasPartialLiveBasket ? `Preços localizados em ${matchedBasketCount} de ${basket.length} itens` : dataState === "live" ? "Nenhum preço atual encontrado" : "Total estimado na melhor combinação"}</span><strong>{dataState === "loading" || hasNoRegionalData ? "—" : hasPartialLiveBasket ? formatCurrency(matchedBasketCents / 100) : dataState === "live" ? "—" : formatCurrency(basketValue)}</strong></div>
             </section>
 
             <aside className="stores-panel" id="mercados">
               <div className="section-heading"><div><p className="eyebrow">RESULTADO</p><h2>Onde vale mais</h2></div><span className="map-label">{location.city} · {radiusKm} KM</span></div>
               <div className="search-controls" aria-label="Preferências de comparação"><label>Raio<select value={radiusKm} onChange={(event) => setRadiusKm(Number(event.target.value))}>{[3, 5, 8, 12, 15].map((radius) => <option key={radius} value={radius}>{radius} km</option>)}</select></label><label>Priorizar<select value={sortBy} onChange={(event) => setSortBy(event.target.value as "price" | "distance")}><option value="price">Menor preço</option><option value="distance">Mais perto</option></select></label></div>
               <div className="map-surface" aria-label="Mapa ilustrativo dos mercados monitorados no raio selecionado"><span className="map-road road-one" /><span className="map-road road-two" /><span className="map-road road-three" /><span className="map-pin pin-one">1</span><span className="map-pin pin-two">2</span><span className="map-pin pin-three">3</span><span className="map-you">você</span></div>
-              {comparisonStores.length > 0 ? <><div className="store-list">{comparisonStores.map((store, index) => <button className={selectedStore === index ? "store-card selected" : "store-card"} key={store.id} onClick={() => void showStoreOffers(store, index)}><span className={`rank ${toneByRank[index] ?? "orange"}`}>{index + 1}</span><span className="store-info"><b>{store.name}</b><small>{store.itemCount > 0 ? `${store.itemCount} de ${basketProducts.length} itens · ${store.distanceKm.toFixed(1).replace(".", ",")} km de você` : `${store.activeOfferCount} ofertas oficiais ativas · ${store.distanceKm.toFixed(1).replace(".", ",")} km de você`}</small></span><span className="store-total"><small>{store.itemCount === basketProducts.length ? index === 0 && sortBy === "price" ? "Melhor cesta" : "Cesta completa" : store.itemCount > 0 ? "Cesta parcial" : "Ofertas ativas"}</small><b>{store.itemCount > 0 ? formatCurrency(store.totalCents / 100) : `${store.activeOfferCount} ofertas`}</b></span></button>)}</div>
+              {dataState === "loading" ? <p className="comparison-loading" role="status">Atualizando mercados e preços para {location.city}…</p> : comparisonStores.length > 0 ? <><div className="store-list">{comparisonStores.map((store, index) => <button className={selectedStore === index ? "store-card selected" : "store-card"} key={store.id} onClick={() => void showStoreOffers(store, index)}><span className={`rank ${toneByRank[index] ?? "orange"}`}>{index + 1}</span><span className="store-info"><b>{store.name}</b><small>{store.itemCount > 0 ? `${store.itemCount} de ${basketProducts.length} itens · ${store.distanceKm.toFixed(1).replace(".", ",")} km de você` : `${store.activeOfferCount} ofertas oficiais ativas · ${store.distanceKm.toFixed(1).replace(".", ",")} km de você`}</small></span><span className="store-total"><small>{store.itemCount === basketProducts.length ? index === 0 && sortBy === "price" ? "Melhor cesta" : "Cesta completa" : store.itemCount > 0 ? "Cesta parcial" : "Ofertas ativas"}</small><b>{store.itemCount > 0 ? formatCurrency(store.totalCents / 100) : `${store.activeOfferCount} ofertas`}</b></span></button>)}</div>
               <button className="primary-cta" onClick={() => void showStoreOffers(activeStore, selectedStore)}>{activeStore.itemCount > 0 ? `Ver itens encontrados em ${activeStore.name}` : `Ver ofertas em ${activeStore.name}`} <span aria-hidden="true">→</span></button>
               <StoreOffersPanel store={offersStore} offers={storeOffers} status={storeOffersState} onClose={closeStoreOffers} />
-              <button className="secondary-action" onClick={sendFeedback} disabled={feedbackState === "sending" || feedbackState === "sent"}>{feedbackState === "sent" ? "Obrigado por avisar" : feedbackState === "error" ? "Tentar reportar novamente" : "Encontrou preço diferente?"}</button></> : <p className="empty-results">Ainda não há mercados com preços validados neste raio em {location.city}. Envie uma etiqueta para ajudar a abrir essa cobertura.</p>}
+              <button className="secondary-action" onClick={sendFeedback} disabled={feedbackState === "sending" || feedbackState === "sent"}>{feedbackState === "sent" ? "Obrigado por avisar" : feedbackState === "error" ? "Tentar reportar novamente" : "Encontrou preço diferente?"}</button></> : <p className="empty-results">{hasNoRegionalData ? `Não foi possível atualizar os mercados de ${location.city} agora. Tente novamente em instantes.` : `Ainda não há mercados com preços validados neste raio em ${location.city}. Envie uma etiqueta para ajudar a abrir essa cobertura.`}</p>}
             </aside>
           </div>
         ) : (
@@ -680,7 +701,7 @@ export default function Home() {
         )}
       </section>
 
-      <section className="offers" id="ofertas"><div className="offers-copy"><p className="eyebrow">OFERTAS DA SEMANA</p><h2>Não é só preço.<br />É timing.</h2><p>Receba avisos quando o item que você procura estiver no melhor momento para comprar.</p><button className="text-link" onClick={() => setCategory("Hortifruti")}>Explorar ofertas perto de você <span aria-hidden="true">→</span></button></div><div className="offer-cards"><article className="offer-card orange-card"><span>HORTIFRUTI</span><strong>Até 28% menor</strong><p>Ofertas frescas para a semana.</p><i aria-hidden="true">🥬</i></article><article className="offer-card navy-card"><span>CAFÉ &amp; DESPENSA</span><strong>Cesta em queda</strong><p>{dataState === "live" ? "Preços vindos da base local." : "Conecte fontes autorizadas para ativar."}</p><i aria-hidden="true">🧺</i></article></div></section>
+      <section className="offers" id="ofertas"><div className="offers-copy"><p className="eyebrow">OFERTAS DA SEMANA</p><h2>Não é só preço.<br />É timing.</h2><p>Receba avisos quando o item que você procura estiver no melhor momento para comprar.</p><button className="text-link" onClick={() => { setCategory("Hortifruti"); document.getElementById("cesta")?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>Explorar ofertas perto de você <span aria-hidden="true">→</span></button></div><div className="offer-cards"><article className="offer-card orange-card"><span>HORTIFRUTI</span><strong>Até 28% menor</strong><p>Ofertas frescas para a semana.</p><i aria-hidden="true">🥬</i></article><article className="offer-card navy-card"><span>CAFÉ &amp; DESPENSA</span><strong>Cesta em queda</strong><p>{dataState === "live" ? "Preços vindos da base local." : "Conecte fontes autorizadas para ativar."}</p><i aria-hidden="true">🧺</i></article></div></section>
 
       <section className="community" id="comunidade" aria-label="Comunidade de preços">
         <div className="community-heading"><div><p className="eyebrow">COMUNIDADE PREÇOCERTO</p><h2>Viu uma oferta? <em>Fortaleça o mapa.</em></h2><p>Envie uma foto da etiqueta, com localização aproximada e sem histórico. Duas contribuições compatíveis validam o preço e liberam pontos.</p></div><div className="community-badge"><span aria-hidden="true">✦</span><strong>{communityProfile ? `${communityProfile.pointBalance} pontos` : "15 pontos"}</strong><small>por etiqueta validada</small></div></div>

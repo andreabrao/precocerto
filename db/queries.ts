@@ -384,7 +384,7 @@ export async function getOffers(db: D1Database, category?: string) {
     .sort((a, b) => b.discountPercent - a.discountPercent);
 }
 
-export async function getStoreOffers(db: D1Database, storeId: string, limit = 36) {
+export async function getStoreOffers(db: D1Database, storeId: string, limit = 60) {
   const now = new Date().toISOString();
   const safeLimit = Math.max(1, Math.min(limit, 60));
   const query = `
