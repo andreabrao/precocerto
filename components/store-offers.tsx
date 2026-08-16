@@ -67,7 +67,8 @@ export function StoreOffersPanel({
           const flyerPath = offer.artifactId ? flyerImageByArtifactId[offer.artifactId] : undefined;
           return <article className="store-offer-card" key={offer.productId}>
             {flyerPath ? <a className="store-offer-image" href={publicUrl(flyerPath)} target="_blank" rel="noreferrer" aria-label={`Abrir encarte com ${offer.productName}`}>
-              <img src={publicUrl(flyerPath)} alt={`Encarte da promoção: ${offer.productName}`} />
+              {/* eslint-disable-next-line @next/next/no-img-element -- vinext não expõe um componente de imagem otimizada equivalente ao next/image; usamos loading="lazy" como mitigação */}
+              <img src={publicUrl(flyerPath)} alt={`Encarte da promoção: ${offer.productName}`} loading="lazy" />
               <span>Ver encarte</span>
             </a> : <div className="store-offer-placeholder" aria-label={`Imagem ainda não disponível para ${offer.productName}`}>
               <strong>{offer.brand.slice(0, 1)}</strong><span>Imagem em breve</span>

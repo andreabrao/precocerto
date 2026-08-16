@@ -91,7 +91,14 @@ export function getPilotCoverageForPoint(point: GeoPoint) {
     && point.longitude <= coverage.bounds.east
     && point.longitude >= coverage.bounds.west,
   );
-  return matches.sort((left, right) => distanceInKm(point, left) - distanceInKm(point, right))[0];
+  if (matches.length > 0) {
+    return matches.sort((left, right) => distanceInKm(point, left) - distanceInKm(point, right))[0];
+  }
+  const nearby = pilotCoverage
+    .map((coverage) => ({ coverage, distance: distanceInKm(point, coverage) }))
+    .filter(({ distance }) => distance <= 25)
+    .sort((a, b) => a.distance - b.distance);
+  return nearby[0]?.coverage;
 }
 
 export function isWithinPilotCoverage(point: GeoPoint) {

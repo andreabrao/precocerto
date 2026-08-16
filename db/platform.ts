@@ -174,7 +174,7 @@ export async function getPlatformOverview(db: D1Database) {
     db.prepare("SELECT COUNT(*) AS count FROM flyer_ingestion_jobs WHERE status IN ('queued', 'processing', 'pending_review')"),
     db.prepare("SELECT COUNT(*) AS count FROM flyer_offer_candidates WHERE status = 'pending_review'"),
   ]);
-  const count = (result: D1Result<{ count: number }>) => Number(result.results?.[0]?.count ?? 0);
+  const count = (result: D1Result<unknown>) => Number((result.results?.[0] as { count?: number } | undefined)?.count ?? 0);
   return { activeUsers: count(users), retailers: count(retailers), stores: count(stores), openFlyerJobs: count(jobs), offersAwaitingReview: count(pending) };
 }
 
@@ -206,8 +206,8 @@ export async function getRetailerPlanUsage(db: D1Database, retailerUserId: strin
     db.prepare("SELECT COUNT(*) AS count FROM flyer_ingestion_jobs WHERE submitted_by_user_id = ? AND analyzed_at >= ? AND analyzed_at < ?").bind(retailerUserId, start, end),
   ]);
   const subscriptionPlan = subscription.results?.[0] as RetailerSubscription | undefined;
-  const flyersThisMonth = Number(flyerUsage.results?.[0]?.count ?? 0);
-  const aiReadsThisMonth = Number(aiUsage.results?.[0]?.count ?? 0);
+  const flyersThisMonth = Number((flyerUsage.results?.[0] as { count?: number } | undefined)?.count ?? 0);
+  const aiReadsThisMonth = Number((aiUsage.results?.[0] as { count?: number } | undefined)?.count ?? 0);
   return {
     subscription: subscriptionPlan ?? null,
     flyersThisMonth,

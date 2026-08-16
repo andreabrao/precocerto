@@ -46,7 +46,7 @@ async function setupDatabase(db: D1Database) {
   await db.prepare("PRAGMA optimize").run();
   const observedAt = new Date().toISOString();
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-  const artifactCapturedAt = new Map(rioVerdeFlyerArtifacts.map((artifact) => [artifact.id, artifact.capturedAt]));
+  const artifactCapturedAt = new Map<string, string>(rioVerdeFlyerArtifacts.map((artifact) => [artifact.id, artifact.capturedAt]));
   const commands = [
     ...[
       { id: "varejista-inicial", name: "Inicial", description: "Para começar a publicar ofertas com revisão.", priceCents: 9900, flyers: 4, ai: 4, stores: 1, analytics: "essencial" },

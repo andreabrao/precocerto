@@ -35,7 +35,7 @@ export async function POST(request: Request) {
     const latitude = asFiniteNumber(form.get("latitude"));
     const longitude = asFiniteNumber(form.get("longitude"));
     const photo = form.get("photo");
-    if (!contributorId || !storeId || !productId || !Number.isInteger(priceCents) || (priceCents ?? 0) <= 0 || latitude === undefined || longitude === undefined || form.get("locationConsent") !== "true") {
+    if (!contributorId || !storeId || !productId || typeof priceCents !== "number" || !Number.isInteger(priceCents) || priceCents <= 0 || latitude === undefined || longitude === undefined || form.get("locationConsent") !== "true") {
       return Response.json({ error: "Preencha produto, mercado, preço, foto e consentimento de localização." }, { status: 400 });
     }
     const location = approximatePoint({ latitude, longitude });

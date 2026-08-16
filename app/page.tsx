@@ -199,9 +199,18 @@ export default function Home() {
 
   const catalogWithSelectedFallbacks = useMemo(() => {
     const catalogIds = new Set(catalogProducts.map((product) => product.id));
-    const missingSelectedProducts = products
+    const missingSelectedProducts: CatalogProduct[] = products
       .filter((product) => basket.includes(product.id) && !catalogIds.has(product.id))
-      .map((product) => ({ id: product.id, name: product.name, brand: "", category: product.category, measure: product.measure }));
+      .map((product) => ({
+        id: product.id,
+        name: product.name,
+        brand: "",
+        category: product.category,
+        measure: product.measure,
+        bestPriceCents: undefined,
+        bestStoreName: undefined,
+        availableStoreCount: undefined,
+      }));
     return [...catalogProducts, ...missingSelectedProducts];
   }, [basket, catalogProducts]);
   const catalogCategories = useMemo(() => ["Todos", ...[...new Set(catalogWithSelectedFallbacks.map((product) => product.category))].sort((left, right) => left.localeCompare(right, "pt-BR"))], [catalogWithSelectedFallbacks]);
@@ -215,8 +224,9 @@ export default function Home() {
   }, [catalogWithSelectedFallbacks, category, productSearch]);
   const basketProducts = basket.map((productId) => catalogWithSelectedFallbacks.find((product) => product.id === productId)).filter((product): product is CatalogProduct => Boolean(product));
   const basketValue = basket.reduce((total, productId) => total + (products.find((product) => product.id === productId)?.price ?? 0), 0);
+  const safeSelectedStore = Math.min(selectedStore, Math.max(0, comparisonStores.length - 1));
   const bestStore = comparisonStores[0] ?? fallbackStores[0];
-  const activeStore = comparisonStores[selectedStore] ?? bestStore;
+  const activeStore = comparisonStores[safeSelectedStore] ?? bestStore;
   const marketPricesByProduct = useMemo(() => {
     const prices = new Map<string, { priceCents: number; storeName: string }>();
     for (const store of comparisonStores) {
@@ -263,14 +273,19 @@ export default function Home() {
     });
     // Não deixe resultados da cidade anterior visíveis enquanto a nova
     // consulta é processada. Isso evita que Curitiba apareça em Itaperuçu
-    // por alguns segundos após uma troca de localização.
-    setDataState("loading");
-    setComparisonStores([]);
-    setSelectedStore(0);
-    storeOffersRequestId.current += 1;
-    setStoreOffers([]);
-    setOffersStore(undefined);
-    setStoreOffersState("idle");
+    // por alguns segundos após uma troca de localização. O reset roda num
+    // microtask (fora do corpo síncrono do effect) para não disparar
+    // renders em cascata durante o commit do próprio effect.
+    queueMicrotask(() => {
+      if (controller.signal.aborted) return;
+      setDataState("loading");
+      setComparisonStores([]);
+      setSelectedStore(0);
+      storeOffersRequestId.current += 1;
+      setStoreOffers([]);
+      setOffersStore(undefined);
+      setStoreOffersState("idle");
+    });
 
     fetch(apiUrl(`/api/comparison?${query.toString()}`), { signal: controller.signal })
       .then(async (response) => {
@@ -301,7 +316,9 @@ export default function Home() {
   useEffect(() => {
     const controller = new AbortController();
     const query = new URLSearchParams({ lat: String(location.latitude), lng: String(location.longitude), radiusKm: String(radiusKm) });
-    setCatalogProducts([]);
+    queueMicrotask(() => {
+      if (!controller.signal.aborted) setCatalogProducts([]);
+    });
     fetch(apiUrl(`/api/catalog?${query.toString()}`), { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error("catalog unavailable");
@@ -419,6 +436,14 @@ export default function Home() {
     }
     setLocation({ ...locality, label: `${locality.label} — referência`, city: locality.city, source: "reference" });
     setLocationMessage("Bairro de referência aplicado. Nenhuma localização do dispositivo foi usada.");
+    setLocationPanelOpen(false);
+  };
+
+  const selectLocality = (localityLabel: string) => {
+    const locality = resolveCuritibaLocality(localityLabel);
+    if (!locality) return;
+    setLocation({ ...locality, label: `${locality.label} — referência`, city: locality.city, source: "reference" });
+    setLocationMessage(`Região de referência (${locality.city}) aplicada.`);
     setLocationPanelOpen(false);
   };
 
@@ -654,6 +679,13 @@ export default function Home() {
               <div><input id="location-reference" list="curitiba-localities" value={locationInput} onChange={(event) => setLocationInput(event.target.value)} placeholder="Ex.: Água Verde ou Itaperuçu" /><button>Aplicar</button></div>
               <datalist id="curitiba-localities">{curitibaLocalities.map((locality) => <option value={locality.label} key={locality.id} />)}</datalist>
             </form>
+            <div className="location-shortcuts" style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "10px" }}>
+              {curitibaLocalities.map((locality) => (
+                <button key={locality.id} type="button" onClick={() => selectLocality(locality.label)} style={{ border: "1px solid #dce3d4", borderRadius: "8px", background: "white", padding: "4px 8px", fontSize: "11px", color: "var(--ink)", fontWeight: 700 }}>
+                  {locality.label.split(",")[0]}
+                </button>
+              ))}
+            </div>
             {locationMessage && <p className="location-message" role="status">{locationMessage}</p>}
           </div>}
           <div className="trust-line"><span className="verified-icon" aria-hidden="true">✓</span>{location.source === "device" ? "Localização aproximada, sem histórico salvo." : "Escolha sua localização ou um bairro de referência."}</div>
@@ -695,7 +727,7 @@ export default function Home() {
               <div className="search-controls" aria-label="Preferências de comparação"><label>Raio<select value={radiusKm} onChange={(event) => setRadiusKm(Number(event.target.value))}>{[3, 5, 8, 12, 15].map((radius) => <option key={radius} value={radius}>{radius} km</option>)}</select></label><label>Priorizar<select value={sortBy} onChange={(event) => setSortBy(event.target.value as "price" | "distance")}><option value="price">Menor preço</option><option value="distance">Mais perto</option></select></label></div>
               <div className="map-surface" aria-label="Mapa ilustrativo dos mercados monitorados no raio selecionado"><span className="map-road road-one" /><span className="map-road road-two" /><span className="map-road road-three" /><span className="map-pin pin-one">1</span><span className="map-pin pin-two">2</span><span className="map-pin pin-three">3</span><span className="map-you">você</span></div>
               {dataState === "loading" ? <p className="comparison-loading" role="status">Atualizando mercados e preços para {location.city}…</p> : comparisonStores.length > 0 ? <><div className="store-list">{comparisonStores.map((store, index) => <button className={selectedStore === index ? "store-card selected" : "store-card"} key={store.id} onClick={() => void showStoreOffers(store, index)}><span className={`rank ${toneByRank[index] ?? "orange"}`}>{index + 1}</span><span className="store-info"><b>{store.name}</b><small>{store.itemCount > 0 ? `${store.itemCount} de ${basketProducts.length} itens · ${store.distanceKm.toFixed(1).replace(".", ",")} km de você` : `${store.activeOfferCount} ofertas oficiais ativas · ${store.distanceKm.toFixed(1).replace(".", ",")} km de você`}</small></span><span className="store-total"><small>{store.itemCount === basketProducts.length ? index === 0 && sortBy === "price" ? "Melhor cesta" : "Cesta completa" : store.itemCount > 0 ? "Cesta parcial" : "Ofertas ativas"}</small><b>{store.itemCount > 0 ? formatCurrency(store.totalCents / 100) : `${store.activeOfferCount} ofertas`}</b></span></button>)}</div>
-              <button className="primary-cta" onClick={() => void showStoreOffers(activeStore, selectedStore)}>{activeStore.itemCount > 0 ? `Ver itens encontrados em ${activeStore.name}` : `Ver ofertas em ${activeStore.name}`} <span aria-hidden="true">→</span></button>
+              <button className="primary-cta" onClick={() => void showStoreOffers(activeStore, safeSelectedStore)}>{activeStore.itemCount > 0 ? `Ver itens encontrados em ${activeStore.name}` : `Ver ofertas em ${activeStore.name}`} <span aria-hidden="true">→</span></button>
               <StoreOffersPanel store={offersStore} offers={storeOffers} status={storeOffersState} onClose={closeStoreOffers} />
               <button className="secondary-action" onClick={sendFeedback} disabled={feedbackState === "sending" || feedbackState === "sent"}>{feedbackState === "sent" ? "Obrigado por avisar" : feedbackState === "error" ? "Tentar reportar novamente" : "Encontrou preço diferente?"}</button></> : <p className="empty-results">{hasNoRegionalData ? `Não foi possível atualizar os mercados de ${location.city} agora. Tente novamente em instantes.` : `Ainda não há mercados com preços validados neste raio em ${location.city}. Envie uma etiqueta para ajudar a abrir essa cobertura.`}</p>}
             </aside>

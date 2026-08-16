@@ -115,7 +115,10 @@ O Menor Preço do Nota Paraná é uma referência forte para Curitiba e Itaperu�
 
 ```bash
 pnpm run db:generate
+pnpm run typecheck
 pnpm run build
 pnpm run test
 pnpm run lint
 ```
+
+`pnpm run test` já roda o typecheck e o build antes dos testes. O typecheck depende de `worker-configuration.d.ts` (na raiz do projeto) para reconhecer os bindings do Worker (`DB`, `CONTRIBUTION_IMAGES`, variáveis do Supabase, etc.); como não há `wrangler.toml` versionado, esse arquivo é mantido manualmente — atualize-o se um binding novo for adicionado no ambiente de produção.
