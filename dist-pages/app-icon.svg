@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="PreçoCerto">
+  <rect width="512" height="512" rx="112" fill="#17372d"/>
+  <circle cx="413" cy="105" r="116" fill="#ff8b55" opacity=".94"/>
+  <path d="M145 140h122c70 0 115 39 115 98 0 65-51 108-126 108h-44v77c0 21-15 35-34 35s-33-14-33-35V175c0-21 14-35 33-35Zm67 63v80h40c37 0 59-14 59-40 0-25-20-40-58-40h-41Z" fill="#c9ef62"/>
+  <path d="M120 412c55 20 122 24 176 8" fill="none" stroke="#fff8ed" stroke-linecap="round" stroke-width="16" opacity=".85"/>
+</svg>
